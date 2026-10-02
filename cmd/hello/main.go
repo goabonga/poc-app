@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Chris <goabonga@pm.me>
 
-// Command greeter prints a greeting for the name given as its first argument.
+// Command hello prints a greeting for the name given as its first argument.
 package main
 
 import (

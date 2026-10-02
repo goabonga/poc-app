@@ -15,7 +15,7 @@ body:
     attributes:
       label: Binary
       options:
-        - greeter
+        - hello
         - pinger
     validations:
       required: true
@@ -24,7 +24,7 @@ body:
     id: version
     attributes:
       label: Version
-      description: "Output of `greeter --version` or `pinger --version`."
+      description: "Output of `hello --version` or `pinger --version`."
     validations:
       required: true
 

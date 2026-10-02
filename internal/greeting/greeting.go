@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Chris <goabonga@pm.me>
 
-// Package greeting renders the greeting message the greeter binary prints.
+// Package greeting renders the greeting message the hello binary prints.
 package greeting
 
 import "fmt"

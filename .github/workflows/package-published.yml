@@ -9,7 +9,7 @@ name: package-published
 # release.yml already created for that component's tag.
 #
 # client_payload:
-#   component: "greeter" | "pinger"
+#   component: "hello" | "pinger"
 #   version:   the released version, e.g. "0.1.0"
 #   kind:      "apt" | "aur"
 #   url:       the .deb download URL (apt) or the AUR/package page (aur)

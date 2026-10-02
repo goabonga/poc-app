@@ -39,15 +39,15 @@ types = ["perf"]
 
 [plugins.go-deps]
 [plugins.go-deps.packages]
-greeter = "./cmd/greeter"
+hello = "./cmd/hello"
 pinger = "./cmd/pinger"
 
-[components.greeter]
-paths = ["cmd/greeter/**", "go.mod", "go.sum"]
+[components.hello]
+paths = ["cmd/hello/**", "go.mod", "go.sum"]
 bump_files = [
-    { file = "cmd/greeter/version.go", key = "regex:Version\\s*=\\s*\"([^\"]+)\"" },
+    { file = "cmd/hello/version.go", key = "regex:Version\\s*=\\s*\"([^\"]+)\"" },
 ]
-changelog = "cmd/greeter/CHANGELOG.md"
+changelog = "cmd/hello/CHANGELOG.md"
 
 [components.pinger]
 paths = ["cmd/pinger/**", "go.mod", "go.sum"]

@@ -3,7 +3,7 @@
 ## Supported versions
 
 Security fixes are applied only to the latest released version of each
-binary (`greeter`, `pinger`) on the `main` branch.
+binary (`hello`, `pinger`) on the `main` branch.
 
 | Version | Supported |
 | --- | --- |
@@ -30,7 +30,7 @@ plan before any public disclosure.
 ## Scope
 
 `pinger` opens outbound TCP connections to an address given on its command
-line; `greeter` only formats a string. Neither parses untrusted network
+line; `hello` only formats a string. Neither parses untrusted network
 input or runs a subprocess. Vulnerabilities in the Go toolchain or standard
 library should be reported upstream, but please let us know so the pinned
 `go` directive can be bumped.

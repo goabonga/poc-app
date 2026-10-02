@@ -9,7 +9,7 @@ Two independently-versioned Go command-line tools, released by multicz.
 
 | Binary | Role |
 | --- | --- |
-| [`greeter`](cmd/greeter) | Prints a greeting for the name given as its first argument. |
+| [`hello`](cmd/hello) | Prints a greeting for the name given as its first argument. |
 | [`pinger`](cmd/pinger) | Reports the TCP connect latency to a `host:port` address. |
 
 ## Requirements
@@ -28,7 +28,7 @@ go test ./...
 
 ## Versioning and release
 
-`greeter` and `pinger` are versioned independently by
+`hello` and `pinger` are versioned independently by
 [multicz](https://github.com/goabonga/multicz), driven by
 [Conventional Commits](https://www.conventionalcommits.org/). Each
 component's `paths` in [`multicz.toml`](multicz.toml) is a curated
