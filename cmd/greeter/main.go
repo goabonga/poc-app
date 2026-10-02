@@ -5,8 +5,9 @@
 package main
 
 import (
-	"fmt"
 	"os"
+
+	"github.com/fatih/color"
 
 	"github.com/goabonga/poc-app/internal/greeting"
 )
@@ -16,5 +17,5 @@ func main() {
 	if len(os.Args) > 1 {
 		name = os.Args[1]
 	}
-	fmt.Println(greeting.For(name))
+	color.Green(greeting.For(name))
 }
