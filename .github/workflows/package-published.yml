@@ -43,9 +43,13 @@ jobs:
           asset="poc-${COMPONENT}_${VERSION}_amd64.deb"
           # poc-apt is a private repo too, so this download needs the same
           # cross-repo auth as everything else that reaches across these
-          # three repos - confirmed for real: an unauthenticated curl here
-          # 404s exactly like poc-app's own tarball fetch did.
-          curl -fsSL -H "Authorization: Bearer $CROSS_REPO_TOKEN" -o "$asset" "$URL"
+          # three repos. The plain browser_download_url doesn't accept a
+          # Bearer token at all (404 regardless of -L, confirmed for
+          # real) - poc-apt's publish.yml sends the REST API asset
+          # endpoint (apiUrl) instead, which needs this Accept header to
+          # return the binary rather than its JSON metadata.
+          curl -fsSL -H "Authorization: Bearer $CROSS_REPO_TOKEN" \
+            -H "Accept: application/octet-stream" -o "$asset" "$URL"
           gh release upload "$tag" "$asset" --clobber
 
       - name: Link the AUR package in the release notes
