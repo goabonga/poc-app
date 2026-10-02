@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Chris <goabonga@pm.me>
+
+name: package-published
+
+# Receives the callback poc-apt/poc-aur send once a component's package has
+# actually built (and, when their own publish secrets are configured,
+# uploaded to the PPA/AUR). Attaches the result to the GitHub Release
+# release.yml already created for that component's tag.
+#
+# client_payload:
+#   component: "greeter" | "pinger"
+#   version:   the released version, e.g. "0.1.0"
+#   kind:      "apt" | "aur"
+#   url:       the .deb download URL (apt) or the AUR/package page (aur)
+
+on:
+  repository_dispatch:
+    types: [package-published]
+
+permissions:
+  contents: write
+
+jobs:
+  attach:
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      COMPONENT: ${{ github.event.client_payload.component }}
+      VERSION: ${{ github.event.client_payload.version }}
+      KIND: ${{ github.event.client_payload.kind }}
+      URL: ${{ github.event.client_payload.url }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Attach the .deb to the release
+        if: env.KIND == 'apt'
+        run: |
+          set -euo pipefail
+          tag="${COMPONENT}-v${VERSION}"
+          asset="poc-${COMPONENT}_${VERSION}-1_amd64.deb"
+          curl -fsSL -o "$asset" "$URL"
+          gh release upload "$tag" "$asset" --clobber
+
+      - name: Link the AUR package in the release notes
+        if: env.KIND == 'aur'
+        run: |
+          set -euo pipefail
+          tag="${COMPONENT}-v${VERSION}"
+          gh release view "$tag" --json body -q .body > /tmp/body.md
+          if ! grep -qF "$URL" /tmp/body.md; then
+            printf '\nAlso available on the [AUR](%s).\n' "$URL" >> /tmp/body.md
+            gh release edit "$tag" --notes-file /tmp/body.md
+          fi

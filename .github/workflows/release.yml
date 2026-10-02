@@ -95,3 +95,28 @@ jobs:
             multicz release-notes --tag "$tag" \
               | gh release create "$tag" --title "$tag" --notes-file - "${assets[@]}"
           done
+
+      - name: Trigger packaging pipelines
+        # Dispatches poc-apt and poc-aur's own `publish` workflow for each
+        # bumped component. GITHUB_TOKEN cannot start a workflow run in
+        # another repository, so this needs a token of its own - a
+        # fine-grained PAT with Contents (read/write) and Actions
+        # (read/write) on poc-apt and poc-aur, stored here as
+        # CROSS_REPO_TOKEN. Skips gracefully when that secret is unset, the
+        # same way the GPG/AUR-key gates do downstream.
+        if: steps.plan.outputs.bumped != ''
+        env:
+          GH_TOKEN: ${{ secrets.CROSS_REPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::secrets.CROSS_REPO_TOKEN unset; poc-apt/poc-aur were not triggered"
+            exit 0
+          fi
+          for component in ${{ steps.plan.outputs.bumped }}; do
+            version=$(multicz get "$component")
+            gh workflow run publish.yml --repo goabonga/poc-apt \
+              -f component="$component" -f version="$version"
+            gh workflow run publish.yml --repo goabonga/poc-aur \
+              -f component="$component" -f version="$version"
+          done
