@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Chris <goabonga@pm.me>
+
+name: multicz setup
+description: |
+  Install multicz with multicz-go-deps-plugin in the same tool venv, so
+  [plugins.go-deps] in multicz.toml resolves. Shared between the ci
+  validate job and the release job, which both need the plugin active.
+
+runs:
+  using: composite
+  steps:
+    - uses: astral-sh/setup-uv@v8.1.0
+      with:
+        enable-cache: false
+        python-version: "3.12"
+    - name: Install multicz + go-deps plugin
+      shell: bash
+      run: uv tool install multicz --with multicz-go-deps-plugin

@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Chris <goabonga@pm.me>
+
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # multicz.toml sanity ahead of everything else: a broken config (a
+  # component whose paths match nothing, a bump_files entry pointing at a
+  # missing file, a plugin section that doesn't load) should fail fast
+  # rather than surface later as a confusing release-job error.
+  validate:
+    name: validate multicz config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/multicz-setup
+      - run: multicz validate --strict
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: |
+          out="$(gofmt -l .)"
+          if [ -n "$out" ]; then
+            echo "gofmt would reformat:"
+            echo "$out"
+            exit 1
+          fi
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+
+  license-headers:
+    name: license headers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: python3 scripts/add_license_header.py --path . --types go,sh,yml,yaml --check
+
+  # Gated on lint rather than run in parallel with it: a build that doesn't
+  # even gofmt cleanly isn't worth compiling and testing.
+  test:
+    name: test
+    needs: [lint]
+    if: needs.lint.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test ./... -cover
