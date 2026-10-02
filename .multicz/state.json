@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "git_head": "b1c218d8198450d6de7466b5049f41f735d7623c",
+  "git_head_short": "b1c218d",
+  "timestamp": "2026-10-02T23:53:17Z",
+  "components": {
+    "hello": {
+      "version": "0.1.0",
+      "tag": "hello-v0.1.0",
+      "tag_sha": null
+    },
+    "pinger": {
+      "version": "0.1.0",
+      "tag": "pinger-v0.1.0",
+      "tag_sha": null
+    }
+  }
+}
