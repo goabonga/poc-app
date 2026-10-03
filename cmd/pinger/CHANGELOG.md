@@ -2,6 +2,12 @@
 
 All notable changes to this component are documented here.
 
+## [0.2.0] - 2026-10-03
+
+### Added
+
+- scaffold greeter and pinger CLIs (`ff82661`)
+
 ## [0.1.0] - 2026-10-02
 
 ### Added
