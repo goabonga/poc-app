@@ -20,7 +20,7 @@ jobs:
     name: validate multicz config
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/multicz-setup
       - run: multicz validate --strict
 
@@ -28,8 +28,8 @@ jobs:
     name: lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - name: gofmt
@@ -40,7 +40,7 @@ jobs:
             echo "$out"
             exit 1
           fi
-      - uses: golangci/golangci-lint-action@v6
+      - uses: golangci/golangci-lint-action@v9
         with:
           version: latest
 
@@ -48,7 +48,7 @@ jobs:
     name: license headers
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - run: python3 scripts/add_license_header.py --path . --types go,sh,yml,yaml --check
 
   # Gated on lint rather than run in parallel with it: a build that doesn't
@@ -59,8 +59,8 @@ jobs:
     if: needs.lint.result == 'success'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - run: go vet ./...
