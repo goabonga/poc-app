@@ -4,20 +4,17 @@
 # multicz.toml - per-binary versioning, changelogs and tags for poc-app.
 # Docs: https://goabonga.github.io/multicz/
 #
-# Two independent CLI binaries, each a multicz component. `paths` is a
-# curated glob; `[plugins.go-deps]` gives each component a second chance via
-# the compiler-verified import graph (go list -deps) when a change lands in
-# an internal/ package the glob doesn't name.
+# Two independent CLI binaries, each a multicz component declared in its own
+# cmd/<name>/multicz.component.toml (paths relative to that directory).
+# `[plugins.go-deps]` gives each component a second chance via the
+# compiler-verified import graph (go list -deps) when a change lands in an
+# internal/ package its own directory doesn't hold.
 
 [project]
 commit_convention = "conventional"
 tag_format = "{component}-v{version}"
 initial_version = "0.0.0"
 state_file = ".multicz/state.json"
-# go.mod / go.sum are claimed by both binaries: a dependency bump changes
-# what each of them links, so it should bump both. See infrastructure's
-# multicz.toml for the same reasoning at a larger scale.
-overlap_policy = "all"
 
 [project.bump_rules]
 feat = "minor"
@@ -42,16 +39,12 @@ types = ["perf"]
 hello = "./cmd/hello"
 pinger = "./cmd/pinger"
 
-[components.hello]
-paths = ["cmd/hello/**", "go.mod", "go.sum"]
-bump_files = [
-    { file = "cmd/hello/version.go", key = "regex:Version\\s*=\\s*\"([^\"]+)\"" },
-]
-changelog = "cmd/hello/CHANGELOG.md"
+[[component.path]]
+path = "cmd/*"
 
-[components.pinger]
-paths = ["cmd/pinger/**", "go.mod", "go.sum"]
-bump_files = [
-    { file = "cmd/pinger/version.go", key = "regex:Version\\s*=\\s*\"([^\"]+)\"" },
-]
-changelog = "cmd/pinger/CHANGELOG.md"
+# go.mod and go.sum sit above every cmd/<name> directory, out of reach of a
+# component file, so they are a component of their own that both binaries
+# depend on: a dependency bump patches `go-modules`, which cascades a patch
+# to hello and pinger. It has no binary and no release of its own.
+[components.go-modules]
+paths = ["go.mod", "go.sum"]

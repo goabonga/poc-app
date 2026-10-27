@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Chris <goabonga@pm.me>
+
+# Paths are relative to this directory. A dependency bump reaches the
+# component through go-modules, declared in the root multicz.toml.
+
+[components.hello]
+paths = ["**"]
+depends_on = ["go-modules"]
+bump_files = [
+    { file = "version.go", key = "regex:Version\\s*=\\s*\"([^\"]+)\"" },
+]
+changelog = "CHANGELOG.md"
