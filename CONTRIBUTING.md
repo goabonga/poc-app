@@ -95,9 +95,11 @@ These workflows read the `AUTO_MERGE_PAT` and `GPG_PRIVATE_KEY` /
 
 ## Releasing
 
-Releases are automated: on every push to `main`, the `release` workflow runs
-`multicz bump` (signed commit + tag, per affected component) and publishes a
-GitHub Release. Maintainers do not bump versions or edit the changelog by
+Releases are automated: on every push to `main`, once the quality jobs
+passed, the `release` job of the `ci` workflow runs `multicz bump` (signed
+commit + tag, per affected component), the `publish` job builds the binaries
+and opens a GitHub Release, and `trigger packaging` starts the poc-apt and
+poc-aur pipelines. Maintainers do not bump versions or edit the changelog by
 hand.
 
 ## Reporting bugs and asking for features
