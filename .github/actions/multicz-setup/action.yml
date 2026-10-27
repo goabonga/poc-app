@@ -16,4 +16,4 @@ runs:
         python-version: "3.12"
     - name: Install multicz + go-deps plugin
       shell: bash
-      run: uv tool install multicz --with multicz-go-deps-plugin
+      run: uv tool install "multicz>=1.10" --with multicz-go-deps-plugin
