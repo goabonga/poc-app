@@ -8,7 +8,7 @@
 # touches and rewrites the prefix to the correct Conventional Commits type:
 #
 #     .github/workflows/*.yml   -> ci:
-#     anything else             -> chore(deps):
+#     go.mod / go.sum           -> fix(deps):
 #
 # The rewrite also re-signs the commits with the maintainer's GPG key (via
 # `GPG_PRIVATE_KEY` + `GPG_PASSPHRASE`). When those secrets are unset, the PR
