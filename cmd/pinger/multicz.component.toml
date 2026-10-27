@@ -3,6 +3,8 @@
 
 # Paths are relative to this directory. A dependency bump reaches the
 # component through go-modules, declared in the root multicz.toml.
+# go-deps resolves the component's imports from its package, a path
+# relative to the repository root.
 
 [components.pinger]
 paths = ["**"]
@@ -11,3 +13,6 @@ bump_files = [
     { file = "version.go", key = "regex:Version\\s*=\\s*\"([^\"]+)\"" },
 ]
 changelog = "CHANGELOG.md"
+
+[plugins.go-deps.packages]
+pinger = "./cmd/pinger"

@@ -6,9 +6,10 @@
 #
 # Two independent CLI binaries, each a multicz component declared in its own
 # cmd/<name>/multicz.component.toml (paths relative to that directory).
-# `[plugins.go-deps]` gives each component a second chance via the
-# compiler-verified import graph (go list -deps) when a change lands in an
-# internal/ package its own directory doesn't hold.
+# Each file also sets the component's `[plugins.go-deps.packages]` entry:
+# the compiler-verified import graph (go list -deps) gives it a second
+# chance when a change lands in an internal/ package its own directory
+# doesn't hold.
 
 [project]
 commit_convention = "conventional"
@@ -33,11 +34,6 @@ types = ["fix"]
 [[project.changelog_sections]]
 title = "Performance"
 types = ["perf"]
-
-[plugins.go-deps]
-[plugins.go-deps.packages]
-hello = "./cmd/hello"
-pinger = "./cmd/pinger"
 
 [[component.path]]
 path = "cmd/*"
