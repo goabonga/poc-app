@@ -51,6 +51,23 @@ jobs:
       - uses: actions/checkout@v6
       - run: python3 scripts/add_license_header.py --path . --types go,sh,py,yml,yaml --check
 
+  # The signed merge replays the commits through sign_commit.py, which
+  # refuses an invalid subject; fail here, before the label is added.
+  commit-subjects:
+    name: commit subjects
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check the commit subjects
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 scripts/check_commit_subject.py --range "$BASE_SHA..$HEAD_SHA"
+
   # Gated on lint rather than run in parallel with it: a build that doesn't
   # even gofmt cleanly isn't worth compiling and testing.
   test:
