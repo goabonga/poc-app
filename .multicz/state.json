@@ -1,17 +1,22 @@
 {
   "version": 1,
-  "git_head": "4fecc75727b9e8dd3949d1f4c3013ada4941e9db",
-  "git_head_short": "4fecc75",
-  "timestamp": "2026-10-03T00:01:08Z",
+  "git_head": "b0af58609c45f9fd9748355a10ec36a13593978d",
+  "git_head_short": "b0af586",
+  "timestamp": "2026-10-27T22:25:22Z",
   "components": {
+    "go-modules": {
+      "version": "0.1.0",
+      "tag": "go-modules-v0.1.0",
+      "tag_sha": null
+    },
     "hello": {
-      "version": "0.2.0",
-      "tag": "hello-v0.2.0",
+      "version": "0.2.1",
+      "tag": "hello-v0.2.1",
       "tag_sha": null
     },
     "pinger": {
-      "version": "0.2.0",
-      "tag": "pinger-v0.2.0",
+      "version": "0.2.1",
+      "tag": "pinger-v0.2.1",
       "tag_sha": null
     }
   }

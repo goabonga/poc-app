@@ -2,6 +2,12 @@
 
 All notable changes to this component are documented here.
 
+## [0.2.1] - 2026-10-27
+
+### Dependencies
+
+- Track `go-modules` `0.1.0`
+
 ## [0.2.0] - 2026-10-03
 
 ### Added
