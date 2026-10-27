@@ -47,7 +47,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - name: gofmt
@@ -60,7 +60,7 @@ jobs:
         env:
           JOB_STATUS: ${{ job.status }}
         run: python3 scripts/format_summary.py text gofmt gofmt.txt
-      - uses: golangci/golangci-lint-action@v6
+      - uses: golangci/golangci-lint-action@v9
         with:
           version: latest
 
@@ -103,7 +103,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - run: go vet ./...
@@ -145,7 +145,7 @@ jobs:
           # main-protection ruleset.
           token: ${{ secrets.AUTO_MERGE_PAT || github.token }}
           persist-credentials: true
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - uses: ./.github/actions/multicz-setup
@@ -227,7 +227,7 @@ jobs:
           # binaries are built from the tagged tree, not the pre-release one.
           ref: main
           fetch-depth: 0
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - uses: ./.github/actions/multicz-setup
