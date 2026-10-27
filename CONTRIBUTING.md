@@ -29,8 +29,12 @@ go test ./...
 go fmt ./...
 uv tool install multicz --with multicz-go-deps-plugin
 multicz validate --strict
-python3 scripts/add_license_header.py --path . --types go,sh,yml,yaml --check
+python3 scripts/add_license_header.py --path . --types go,sh,py,yml,yaml --check
+uvx pytest scripts/tests --import-mode=importlib
 ```
+
+The same gates run as git hooks once installed with
+`pre-commit install` (it sets up the pre-commit and commit-msg hooks).
 
 ## Commit messages
 
@@ -51,6 +55,11 @@ Only commits that touch a component's tracked paths (`cmd/<name>/**`,
 `go.mod`, `go.sum` — or any file its import graph reaches, per
 `multicz-go-deps-plugin`) trigger that component's release. Do not append
 `Co-Authored-By` trailers.
+
+The subject is at most 72 characters, has no trailing period and a
+lowercase first word after the colon: the signed merge refuses any other
+subject, so the `commit-subject` pre-commit hook and the `commit-subjects`
+CI job check it first.
 
 ## Releasing
 
