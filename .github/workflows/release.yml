@@ -125,6 +125,9 @@ jobs:
         run: |
           set -euo pipefail
           for component in ${{ steps.plan.outputs.bumped }}; do
+            # go-modules is versioned to cascade dependency bumps; it has no
+            # binary to build nor release of its own.
+            [ -d "cmd/${component}" ] || continue
             version=$(multicz get "$component")
             tag="${component}-v${version}"
             mkdir -p dist
@@ -157,6 +160,7 @@ jobs:
             exit 0
           fi
           for component in ${{ steps.plan.outputs.bumped }}; do
+            [ -d "cmd/${component}" ] || continue
             version=$(multicz get "$component")
             gh workflow run publish.yml --repo goabonga/poc-apt \
               -f component="$component" -f version="$version"
