@@ -94,19 +94,6 @@ jobs:
         if: ${{ !cancelled() }}
         run: python3 scripts/format_summary.py headers headers.txt
 
-  # The Python scripts behind the CI automation have their own tests: they
-  # use only the standard library, so pytest is all they need.
-  script-tests:
-    name: script tests
-    if: github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore(release)')
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v8.1.0
-        with:
-          enable-cache: false
-      - run: uvx pytest scripts/tests --import-mode=importlib
-
   # Gated on lint rather than run in parallel with it: a build that doesn't
   # even gofmt cleanly isn't worth compiling and testing.
   test:

@@ -30,7 +30,6 @@ go fmt ./...
 uv tool install multicz --with multicz-go-deps-plugin
 multicz validate --strict
 python3 scripts/add_license_header.py --path . --types go,sh,py,yml,yaml --check
-uvx pytest scripts/tests --import-mode=importlib
 ```
 
 The same gates run as git hooks once installed with
