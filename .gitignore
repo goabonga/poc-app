@@ -1,3 +1,7 @@
 # Local build output.
 /foo
 /bar
+
+# Python bytecode and test caches of the CI scripts.
+__pycache__/
+.pytest_cache/
