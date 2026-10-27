@@ -1,0 +1,76 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Chris <goabonga@pm.me>
+
+# Local pre-commit configuration. Mirrors the CI quality gates so the
+# loop "format / SPDX headers / commit-msg" runs before the commit lands
+# instead of after the push.
+#
+# Install once per clone: `pre-commit install` - this installs the
+# pre-commit AND commit-msg hooks (see `default_install_hook_types`
+# below). Run manually on the full tree: `pre-commit run --all-files`.
+
+default_install_hook_types: [pre-commit, commit-msg]
+
+repos:
+  # Generic hygiene
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=500]
+
+  - repo: local
+    hooks:
+      - id: gofmt
+        name: gofmt
+        entry: gofmt -l -w
+        language: system
+        types: [go]
+
+  # SPDX license headers, over the same files as the `license-headers`
+  # CI job.
+  - repo: local
+    hooks:
+      - id: spdx-headers
+        name: SPDX headers
+        entry: python3 scripts/add_license_header.py --path . --types go,sh,py,yml,yaml --check
+        language: system
+        pass_filenames: false
+        files: \.(go|sh|py|ya?ml)$
+
+  # Conventional Commits validation on the commit message itself.
+  # `--strict` is intentionally NOT enabled: it would reject the
+  # `fixup!` / `squash!` prefixes that `git commit --fixup=<sha>`
+  # produces.
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v3.6.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+        args:
+          - feat
+          - fix
+          - perf
+          - refactor
+          - docs
+          - test
+          - chore
+          - ci
+          - build
+          - style
+
+  # The rule of scripts/sign_commit.py, applied before the signed merge
+  # refuses the commit: at most 72 characters, no trailing period, a
+  # lowercase summary.
+  - repo: local
+    hooks:
+      - id: commit-subject
+        name: commit subject
+        entry: python3 scripts/check_commit_subject.py
+        language: system
+        stages: [commit-msg]
