@@ -114,3 +114,173 @@ jobs:
         env:
           JOB_STATUS: ${{ job.status }}
         run: python3 scripts/format_summary.py text "go test" gotest.txt
+
+  # Release on main only: bump the versions, write the changelogs, create the
+  # release commit and one tag per component and push them back. Gated on
+  # every quality job; `needs` blocks on any upstream failure and skips the
+  # `chore(release)` commit, whose quality jobs are skipped.
+  #
+  # The release commit and tags are GPG-signed when GPG_PRIVATE_KEY and
+  # GPG_PASSPHRASE are configured, and pushed with the maintainer token
+  # (AUTO_MERGE_PAT) when set, since the main-protection ruleset only lets
+  # the maintainer push to main. Without them the release falls back to an
+  # unsigned push with the workflow token.
+  release:
+    name: release
+    needs: [validate, lint, license-headers, test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    outputs:
+      # The bumped components that ship a binary, "<component>:<version>"
+      # separated by spaces. go-modules is versioned to cascade dependency
+      # bumps and has nothing to build nor release.
+      releases: ${{ steps.bump.outputs.releases }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          # A push made with the workflow token cannot bypass the
+          # main-protection ruleset.
+          token: ${{ secrets.AUTO_MERGE_PAT || github.token }}
+          persist-credentials: true
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: ./.github/actions/multicz-setup
+      - name: Configure git author
+        # Attribute the release commit to whoever pushed the head commit
+        # that triggered CI, falling back to the github-actions[bot]
+        # noreply identity when the payload carries no author.
+        env:
+          NAME: ${{ github.event.head_commit.author.name }}
+          EMAIL: ${{ github.event.head_commit.author.email }}
+        run: |
+          git config user.name  "${NAME:-github-actions[bot]}"
+          git config user.email "${EMAIL:-41898282+github-actions[bot]@users.noreply.github.com}"
+      - name: Detect GPG availability
+        # Secrets can't be referenced from `if:` directly, so promote
+        # their presence to a step output.
+        id: gpg
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          if [ -n "$GPG_PRIVATE_KEY" ] && [ -n "$GPG_PASSPHRASE" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Import and unlock GPG key
+        if: steps.gpg.outputs.available == 'true'
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          # Pre-cache the passphrase in gpg-agent via a dummy sign so
+          # subsequent `git commit -S` / `git tag -s` don't prompt.
+          echo test | gpg --batch --yes --passphrase "$GPG_PASSPHRASE" \
+            --pinentry-mode loopback --sign > /dev/null
+          # Derive the signing key id from the imported key; no extra
+          # secret needed.
+          KEY_ID=$(gpg --list-secret-keys --with-colons \
+            | awk -F: '/^sec/{print $5; exit}')
+          git config user.signingkey "$KEY_ID"
+      - name: Plan release
+        run: multicz plan --summary "$GITHUB_STEP_SUMMARY"
+      - name: Bump, commit, tag, push
+        id: bump
+        run: |
+          set -euo pipefail
+          SIGN=""
+          if [ "${{ steps.gpg.outputs.available }}" = "true" ]; then
+            SIGN="--sign"
+          fi
+          PLAN=$(multicz bump --commit --tag --push $SIGN \
+            --summary "$GITHUB_STEP_SUMMARY" --output json)
+          releases=""
+          for component in $(echo "$PLAN" | jq -r '.bumps // {} | keys | join(" ")'); do
+            [ -d "cmd/${component}" ] || continue
+            releases="${releases} ${component}:$(multicz get "$component")"
+          done
+          echo "releases=${releases# }" >> "$GITHUB_OUTPUT"
+
+  # Cross-compile each released binary for linux/amd64 and linux/arm64 and
+  # open a GitHub Release per tag, with notes from `multicz release-notes`.
+  publish:
+    name: publish
+    needs: [release]
+    if: needs.release.outputs.releases != ''
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      # The maintainer token, like the release job: the release is
+      # published under the maintainer account, not the bot.
+      GH_TOKEN: ${{ secrets.AUTO_MERGE_PAT || github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Pull the release commit and the tags multicz just pushed so the
+          # binaries are built from the tagged tree, not the pre-release one.
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: ./.github/actions/multicz-setup
+      - name: Build and publish each released component
+        env:
+          RELEASES: ${{ needs.release.outputs.releases }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for release in $RELEASES; do
+            component="${release%%:*}"
+            version="${release#*:}"
+            tag="${component}-v${version}"
+            assets=()
+            for goarch in amd64 arm64; do
+              out="dist/${component}_${version}_linux_${goarch}"
+              GOOS=linux GOARCH="$goarch" CGO_ENABLED=0 \
+                go build -trimpath -ldflags="-s -w" -o "$out" "./cmd/${component}"
+              assets+=("$out")
+            done
+            multicz release-notes --tag "$tag" \
+              | gh release create "$tag" --title "$tag" --notes-file - "${assets[@]}"
+          done
+
+  # Dispatches poc-apt and poc-aur's own `publish` workflow for each released
+  # component. GITHUB_TOKEN cannot start a workflow run in another
+  # repository, so this needs a token of its own - a fine-grained PAT with
+  # Contents (read/write) and Actions (read/write) on poc-apt and poc-aur,
+  # stored here as CROSS_REPO_TOKEN. Skips gracefully when that secret is
+  # unset, the same way the GPG/AUR-key gates do downstream. They report
+  # back through package-published.yml once their package is built.
+  trigger-packaging:
+    name: trigger packaging
+    needs: [release, publish]
+    if: needs.release.outputs.releases != ''
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - name: Dispatch the packaging pipelines
+        env:
+          GH_TOKEN: ${{ secrets.CROSS_REPO_TOKEN }}
+          RELEASES: ${{ needs.release.outputs.releases }}
+        run: |
+          set -euo pipefail
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::secrets.CROSS_REPO_TOKEN unset; poc-apt/poc-aur were not triggered"
+            exit 0
+          fi
+          for release in $RELEASES; do
+            component="${release%%:*}"
+            version="${release#*:}"
+            gh workflow run publish.yml --repo goabonga/poc-apt \
+              -f component="$component" -f version="$version"
+            gh workflow run publish.yml --repo goabonga/poc-aur \
+              -f component="$component" -f version="$version"
+          done

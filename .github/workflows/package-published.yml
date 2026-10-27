@@ -6,7 +6,7 @@ name: package-published
 # Receives the callback poc-apt/poc-aur send once a component's package has
 # actually built (and, when their own publish secrets are configured,
 # uploaded to the PPA/AUR). Attaches the result to the GitHub Release
-# release.yml already created for that component's tag.
+# the ci workflow already created for that component's tag.
 #
 # client_payload:
 #   component: "hello" | "pinger"
