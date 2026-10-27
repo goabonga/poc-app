@@ -61,6 +61,39 @@ lowercase first word after the colon: the signed merge refuses any other
 subject, so the `commit-subject` pre-commit hook and the `commit-subjects`
 CI job check it first.
 
+## Branches and merging
+
+A branch is named after the GitHub issue it addresses:
+
+```
+issue-<number>-<slug>
+```
+
+`<number>` is the issue number and `<slug>` a few lowercase words separated
+by hyphens. Keep it free of `/`: Git cannot hold `issue-12` and
+`issue-12/...` at the same time, and the automation only recognises
+`issue-*` as a base branch. A sub-issue branch is created from, and
+proposed to, the branch of its parent issue; the parent branch is proposed
+to `main` once they are all merged. Dependabot branches (`dependabot/...`)
+need no naming.
+
+Adding the `auto-merge` label to a pull request, by someone with write
+access, replays its commits GPG-signed onto its base branch once the
+required checks passed, then fast-forwards that branch. The history stays
+linear. The commits of a branch pushed unsigned, such as by GitHub's
+"Update branch", are re-signed in place.
+
+Dependabot pull requests are rewritten as Conventional Commits (`ci` for
+workflow bumps, `fix(deps)` for Go modules) and signed. Each one also gets
+an issue, assigned to the repository owner, which the pull request closes
+when it is merged; if it is closed without a merge, the issue is closed as
+not planned. Once CI passed on the rewritten head it is queued for the
+signed merge, except major updates, which wait for a maintainer's label.
+
+These workflows read the `AUTO_MERGE_PAT` and `GPG_PRIVATE_KEY` /
+`GPG_PASSPHRASE` secrets and the `GIT_USER_NAME`, `GIT_USER_EMAIL` and
+`GIT_SIGNING_KEY` variables of the repository.
+
 ## Releasing
 
 Releases are automated: on every push to `main`, the `release` workflow runs
