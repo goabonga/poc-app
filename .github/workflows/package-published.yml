@@ -6,13 +6,16 @@ name: package-published
 # Receives the callback poc-apt/poc-aur send once a component's package has
 # actually built (and, when their own publish secrets are configured,
 # uploaded to the PPA/AUR). Attaches the result to the GitHub Release
-# the ci workflow already created for that component's tag.
+# the ci workflow already created for that component's tag, and documents
+# in its notes how to install the package (scripts/release_notes.py).
 #
 # client_payload:
 #   component: "hello" | "pinger"
 #   version:   the released version, e.g. "0.1.0"
 #   kind:      "apt" | "aur"
 #   url:       the .deb download URL (apt) or the AUR/package page (aur)
+#   package:   the name of the package, e.g. "poc-hello"
+#   ppa:       the Launchpad PPA, e.g. "ppa:goabonga/poc" (apt only)
 
 on:
   repository_dispatch:
@@ -30,6 +33,8 @@ jobs:
       VERSION: ${{ github.event.client_payload.version }}
       KIND: ${{ github.event.client_payload.kind }}
       URL: ${{ github.event.client_payload.url }}
+      PACKAGE: ${{ github.event.client_payload.package }}
+      PPA: ${{ github.event.client_payload.ppa }}
     steps:
       - uses: actions/checkout@v7
 
@@ -52,16 +57,17 @@ jobs:
             -H "Accept: application/octet-stream" -o "$asset" "$URL"
           gh release upload "$tag" "$asset" --clobber
 
-      - name: Link the AUR package in the release notes
-        if: env.KIND == 'aur'
+      - name: Document the package in the release notes
+        # Adds, or replaces, the section explaining how to install the
+        # package: the PPA for apt, the AUR for aur. It sits between markers,
+        # so a rerun does not pile up a second copy.
         run: |
           set -euo pipefail
           tag="${COMPONENT}-v${VERSION}"
-          gh release view "$tag" --json body -q .body > /tmp/body.md
-          if ! grep -qF "$URL" /tmp/body.md; then
-            printf '\nAlso available on the [AUR](%s).\n' "$URL" >> /tmp/body.md
-            gh release edit "$tag" --notes-file /tmp/body.md
-          fi
+          gh release view "$tag" --json body -q .body > body.md
+          python3 scripts/release_notes.py "$KIND" "$COMPONENT" "$VERSION" "$URL" \
+            --package "$PACKAGE" --ppa "$PPA" < body.md > notes.md
+          gh release edit "$tag" --notes-file notes.md
 
       - name: Job summary
         if: ${{ !cancelled() }}
@@ -78,7 +84,7 @@ jobs:
             echo "| Kind | \`${KIND}\` |"
             echo "| Release | [\`${COMPONENT}-v${VERSION}\`](https://github.com/${GITHUB_REPOSITORY}/releases/tag/${COMPONENT}-v${VERSION}) |"
             case "$KIND" in
-              apt) echo "| Package | \`.deb\` from poc-apt, attached to the release |" ;;
-              aur) echo "| Package | [AUR page](${URL}), linked in the release notes |" ;;
+              apt) echo "| Package | \`.deb\` from poc-apt, attached to the release; install steps added to the release notes |" ;;
+              aur) echo "| Package | built by poc-aur; install steps added to the release notes |" ;;
             esac
           } >> "$GITHUB_STEP_SUMMARY"
