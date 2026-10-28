@@ -145,11 +145,35 @@ jobs:
           # main-protection ruleset.
           token: ${{ secrets.AUTO_MERGE_PAT || github.token }}
           persist-credentials: true
+      - name: Check that main has not moved on
+        # The release commit is made on the commit that triggered the run. A
+        # push that landed since would make the push of the release commit
+        # fail (non-fast-forward) after the tags went through, leaving tags
+        # on a commit that is not on main (confirmed for real). The run of the
+        # newer commit follows this one and releases everything that is
+        # pending, so this one stands aside.
+        id: head
+        run: |
+          latest=$(git ls-remote origin refs/heads/main | cut -f1)
+          if [ "$latest" = "$GITHUB_SHA" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "current=false" >> "$GITHUB_OUTPUT"
+            echo "main moved on to $latest: the run of that commit releases"
+            {
+              echo "## Release skipped"
+              echo
+              echo "\`main\` moved on to \`$latest\`: the run of that commit releases what is pending."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
       - uses: actions/setup-go@v7
+        if: steps.head.outputs.current == 'true'
         with:
           go-version-file: go.mod
       - uses: ./.github/actions/multicz-setup
+        if: steps.head.outputs.current == 'true'
       - name: Configure git author
+        if: steps.head.outputs.current == 'true'
         # Attribute the release commit to whoever pushed the head commit
         # that triggered CI, falling back to the github-actions[bot]
         # noreply identity when the payload carries no author.
@@ -160,6 +184,7 @@ jobs:
           git config user.name  "${NAME:-github-actions[bot]}"
           git config user.email "${EMAIL:-41898282+github-actions[bot]@users.noreply.github.com}"
       - name: Detect GPG availability
+        if: steps.head.outputs.current == 'true'
         # Secrets can't be referenced from `if:` directly, so promote
         # their presence to a step output.
         id: gpg
@@ -173,7 +198,7 @@ jobs:
             echo "available=false" >> "$GITHUB_OUTPUT"
           fi
       - name: Import and unlock GPG key
-        if: steps.gpg.outputs.available == 'true'
+        if: steps.head.outputs.current == 'true' && steps.gpg.outputs.available == 'true'
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
@@ -189,8 +214,10 @@ jobs:
             | awk -F: '/^sec/{print $5; exit}')
           git config user.signingkey "$KEY_ID"
       - name: Plan release
+        if: steps.head.outputs.current == 'true'
         run: multicz plan --summary "$GITHUB_STEP_SUMMARY"
       - name: Bump, commit, tag, push
+        if: steps.head.outputs.current == 'true'
         id: bump
         run: |
           set -euo pipefail
