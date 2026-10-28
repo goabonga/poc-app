@@ -2,6 +2,12 @@
 
 All notable changes to this component are documented here.
 
+## [0.5.0] - 2026-10-28
+
+### Added
+
+- **pinger**: accept -v as a short form of --version (`8b860e8`)
+
 ## [0.4.0] - 2026-10-28
 
 ### Added

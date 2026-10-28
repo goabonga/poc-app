@@ -1,12 +1,12 @@
 {
   "version": 1,
-  "git_head": "4ffc195b48baf1701818a41c3842eb657ec67203",
-  "git_head_short": "4ffc195",
-  "timestamp": "2026-10-28T14:26:58Z",
+  "git_head": "fb59b9531580b9159a10dc7513ff2651471626c7",
+  "git_head_short": "fb59b95",
+  "timestamp": "2026-10-28T14:35:41Z",
   "components": {
-    "hello": {
-      "version": "0.6.0",
-      "tag": "hello-v0.6.0",
+    "pinger": {
+      "version": "0.5.0",
+      "tag": "pinger-v0.5.0",
       "tag_sha": null
     }
   }
