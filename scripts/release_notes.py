@@ -8,7 +8,7 @@
 Two commands, run by package-build.yml and package-published.yml:
 
     release_notes.py notes KIND COMPONENT VERSION URL [--package NAME] \\
-        [--ppa PPA] [--debs JSON] < notes.md > new-notes.md
+        [--ppa PPA] [--results JSON] [--issues JSON] < notes.md > new-notes.md
     release_notes.py assets PACKAGE VERSION DEBS_JSON
 
 ``notes`` reads the current release notes on stdin and writes them back with
@@ -102,46 +102,112 @@ def parse_debs(text: str) -> list[dict[str, str]]:
     return [deb for deb in debs if isinstance(deb, dict) and {"series", "arch", "url"} <= deb.keys()]
 
 
+BUILT = "Successfully built"
+
+
+def parse_results(text: str) -> list[dict[str, Any]]:
+    """What poc-apt reports for each series: ``{series, version, state, published, builds}``."""
+    try:
+        results = json.loads(text) if text.strip() else []
+    except ValueError:
+        return []
+    return [
+        result
+        for result in results
+        if isinstance(result, dict) and "series" in result and isinstance(result.get("builds", []), list)
+    ]
+
+
+def parse_issues(text: str) -> dict[str, int]:
+    """The issues opened for failed builds, ``{"<series>/<arch>": number}``."""
+    try:
+        issues = json.loads(text) if text.strip() else {}
+    except ValueError:
+        return {}
+    return {key: number for key, number in issues.items() if isinstance(number, int)} if isinstance(issues, dict) else {}
+
+
+def built_archs(result: dict[str, Any]) -> list[str]:
+    """The architectures a series was built for, whatever happened to the build."""
+    return [build["arch"] for build in result.get("builds", []) if "arch" in build]
+
+
+def arch_outcome(result: dict[str, Any], build: dict[str, Any], issues: dict[str, int]) -> str:
+    """How a build ended, for the table of the notes."""
+    if build.get("state") != BUILT:
+        issue = issues.get(f"{result['series']}/{build.get('arch', '')}")
+        return f"{build.get('arch', '?')} ❌ failed" + (f" (#{issue})" if issue else "")
+    if not result.get("published"):
+        return f"{build['arch']} ⚠️ built, not published yet"
+    return f"{build['arch']} ✅"
+
+
+def series_row(result: dict[str, Any], issues: dict[str, int]) -> str:
+    series = result["series"]
+    builds = result.get("builds", [])
+    if not builds:
+        # Nothing was built at all: not uploaded, rejected or never built.
+        issue = issues.get(f"{series}/*")
+        return f"| {series} | ❌ not built ({result.get('state', 'unknown')})" + (f" (#{issue})" if issue else "") + " |"
+    return f"| {series} | " + ", ".join(arch_outcome(result, build, issues) for build in builds) + " |"
+
+
+def attached_names(package: str, version: str, results: list[dict[str, Any]]) -> list[str]:
+    """The names of the .deb files attached to the release: the builds that succeeded."""
+    return [
+        asset_name(package, version, {"series": result["series"], "arch": build["arch"]})
+        for result in results
+        for build in result.get("builds", [])
+        if build.get("state") == BUILT
+    ]
+
+
 def apt_section(
-    package: str, version: str, details: dict[str, str] | None, debs: list[dict[str, str]]
+    package: str,
+    version: str,
+    details: dict[str, str] | None,
+    results: list[dict[str, Any]],
+    issues: dict[str, int] | None = None,
 ) -> str:
+    issues = issues or {}
+    published = [result["series"] for result in results if result.get("published")]
+    table = ""
+    if results:
+        rows = "\n".join(series_row(result, issues) for result in results)
+        table = f"""### Build results
+
+| Series | Architectures |
+| --- | --- |
+{rows}"""
+    names = attached_names(package, version, results)
     files = ""
-    if debs:
-        rows = "\n".join(
-            f"| {deb['series']} | {deb['arch']} | `{asset_name(package, version, deb)}` |"
-            for deb in debs
-        )
+    if names:
+        listed = "\n".join(f"- `{name}`" for name in names)
         files = f"""The packages Launchpad built are also attached to this release, one per
 series and architecture, to install without adding the archive:
 
-| Series | Architecture | File |
-| --- | --- | --- |
-{rows}
+{listed}
 
 ```bash
-sudo apt install ./{asset_name(package, version, debs[0])}
+sudo apt install ./{names[0]}
 ```"""
-    if details is None:
-        return f"## Install with apt\n\n{files}" if files else "## Install with apt"
-    series = details["series"]
-    by_hand = ""
-    if series:
-        by_hand = f"""
-
-To add the archive by hand instead, put these lines in your software sources:
+    if details is None or not published:
+        intro = "## Install with apt"
+        if details is not None and not published:
+            intro += "\n\nNo series is published in the archive yet."
+        return "\n\n".join(part for part in (intro, table, files) if part)
+    series_list = ", ".join(published)
+    by_hand = f"""To add the archive by hand instead, put these lines in your software sources,
+with `<series>` one of {series_list}:
 
 ```
-deb {details["sources_url"]} {series} main
-deb-src {details["sources_url"]} {series} main
+deb {details["sources_url"]} <series> main
+deb-src {details["sources_url"]} <series> main
 ```"""
     key = ""
     if details["fingerprint"]:
-        key = f"\n\nThe archive is signed with the key `{details['fingerprint']}`."
-    target = f" for {details['distribution'].capitalize()}" if series else ""
-    built = f"\n\n{files}" if files else ""
-    return f"""## Install with apt
-
-The package is built by Launchpad{target} and published in a personal
+        key = f"The archive is signed with the key `{details['fingerprint']}`."
+    install = f"""The package is built by Launchpad for {details['distribution'].capitalize()} and published in a personal
 package archive (PPA). The packages in it are unsupported and the archive is
 untrusted, so add it only if you trust its owner.
 
@@ -149,9 +215,11 @@ untrusted, so add it only if you trust its owner.
 sudo add-apt-repository {details["ppa"]}
 sudo apt update
 sudo apt install {package}
-```{by_hand}{key}{built}
-
-Builds and their logs: [{details["ppa"]}]({details["page_url"]})."""
+```"""
+    page = f"Builds and their logs: [{details['ppa']}]({details['page_url']})."
+    return "\n\n".join(
+        part for part in ("## Install with apt", install, by_hand, key, table, files, page) if part
+    )
 
 
 def aur_section(package: str, url: str) -> str:
@@ -188,10 +256,11 @@ def section(
     version: str,
     url: str,
     details: dict[str, str] | None = None,
-    debs: list[dict[str, str]] | None = None,
+    results: list[dict[str, Any]] | None = None,
+    issues: dict[str, int] | None = None,
 ) -> str:
     if kind == "apt":
-        return apt_section(package, version, details, debs or [])
+        return apt_section(package, version, details, results or [], issues)
     if kind == "aur":
         return aur_section(package, url)
     raise ValueError(f"unknown package kind: {kind!r}")
@@ -218,7 +287,8 @@ def main(argv: list[str]) -> int:
     notes.add_argument("url")
     notes.add_argument("--package", default="", help="the name of the package")
     notes.add_argument("--ppa", default="", help="the PPA, as ppa:<owner>/<name> (apt only)")
-    notes.add_argument("--debs", default="", help="the built .deb files, as JSON (apt only)")
+    notes.add_argument("--results", default="", help="what happened to each series, as JSON (apt only)")
+    notes.add_argument("--issues", default="", help="the issues of failed builds, as JSON (apt only)")
     assets = commands.add_parser("assets", help="list the .deb files to attach")
     assets.add_argument("package")
     assets.add_argument("version")
@@ -232,7 +302,15 @@ def main(argv: list[str]) -> int:
     # what poc-apt and poc-aur have always called it.
     package = args.package or f"poc-{args.component}"
     details = ppa_details(args.ppa, package) if args.kind == "apt" and args.ppa else None
-    text = section(args.kind, package, args.version, args.url, details, parse_debs(args.debs))
+    text = section(
+        args.kind,
+        package,
+        args.version,
+        args.url,
+        details,
+        parse_results(args.results),
+        parse_issues(args.issues),
+    )
     sys.stdout.write(upsert(sys.stdin.read(), args.kind, text))
     return 0
 
