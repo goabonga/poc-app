@@ -2,6 +2,12 @@
 
 All notable changes to this component are documented here.
 
+## [0.5.0] - 2026-10-28
+
+### Added
+
+- **hello**: accept -v as a short form of --version (`bc4b487`)
+
 ## [0.4.0] - 2026-10-28
 
 ### Added
