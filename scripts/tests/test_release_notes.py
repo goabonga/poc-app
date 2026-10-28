@@ -108,6 +108,15 @@ def test_aur_section_explains_how_to_install_from_the_aur() -> None:
     assert "makepkg -si" in text
 
 
+def test_aur_section_mentions_the_archive_attached_to_the_release() -> None:
+    name = rn.aur_archive_name("poc-pinger", "0.3.0")
+    assert name == "poc-pinger_0.3.0_aur.tar.gz"
+    url = "https://aur.archlinux.org/packages/poc-pinger"
+    text = rn.section("aur", "poc-pinger", "0.3.0", url, archive=name)
+    assert "`poc-pinger_0.3.0_aur.tar.gz`" in text and "yay -S poc-pinger" in text
+    assert "attached" not in rn.section("aur", "poc-pinger", "0.3.0", url)
+
+
 def test_aur_section_without_an_aur_push_says_so() -> None:
     text = rn.section("aur", "poc-hello", "0.3.0", "https://github.com/x/releases/download/a")
     assert "not pushed to the AUR" in text
