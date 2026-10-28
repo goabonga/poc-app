@@ -1,0 +1,138 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Chris <goabonga@pm.me>
+
+name: package-complete
+
+# Receives the callback poc-apt sends once every series of a component is over,
+# built and published on Launchpad or not. It
+#   1. opens a bug issue for each series and architecture that failed,
+#   2. writes, in the notes of the release, how to install the packages and how
+#      each series and architecture ended, the failed ones marked and linked,
+#   3. publishes the release, a draft until now. A series that failed does not
+#      hold it back: it is flagged, and its issue is where it gets followed.
+#
+# client_payload:
+#   component: "hello" | "pinger"
+#   version:   the released version, e.g. "0.3.0"
+#   package:   the name of the package, e.g. "poc-hello"
+#   ppa:       the Launchpad PPA, e.g. "ppa:goabonga/poc"
+#   status:    "success" | "failure"
+#   run_url:   the poc-apt run, for the issues
+#   results:   a JSON array, one entry per series:
+#              {series, version, state, published, builds: [{arch, state, url, log_url}]}
+
+on:
+  repository_dispatch:
+    types: [package-complete]
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  complete:
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      COMPONENT: ${{ github.event.client_payload.component }}
+      VERSION: ${{ github.event.client_payload.version }}
+      PACKAGE: ${{ github.event.client_payload.package }}
+      PPA: ${{ github.event.client_payload.ppa }}
+      STATUS: ${{ github.event.client_payload.status }}
+      RUN_URL: ${{ github.event.client_payload.run_url }}
+      RESULTS: ${{ github.event.client_payload.results }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check the payload
+        run: |
+          set -euo pipefail
+          [[ "$COMPONENT" =~ ^[a-z][a-z0-9-]*$ ]] || { echo "::error::invalid component"; exit 1; }
+          [[ "$VERSION" =~ ^[0-9][0-9A-Za-z.+~-]*$ ]] || { echo "::error::invalid version"; exit 1; }
+          [[ "$RUN_URL" == https://github.com/goabonga/poc-apt/actions/runs/* ]] || { echo "::error::unexpected run URL"; exit 1; }
+          jq -e 'type == "array"' <<<"${RESULTS:-[]}" > /dev/null || { echo "::error::results is not a list"; exit 1; }
+
+      - name: Wait for the packages to be attached
+        # They come with the package-built events, sent earlier, but each is
+        # a run of its own: wait, a few minutes at most, for the packages of
+        # the builds that succeeded to be on the release.
+        run: |
+          set -euo pipefail
+          . scripts/release.sh
+          tag="${COMPONENT}-v${VERSION}"
+          id=$(release_id "$tag")
+          [ -n "$id" ] || { echo "::error::no release for $tag"; exit 1; }
+          package="${PACKAGE:-poc-${COMPONENT}}"
+          expected=$(jq -r --arg package "$package" --arg version "$VERSION" \
+            '.[] | .series as $s | .builds[] | select(.state == "Successfully built") | "\($package)_\($version)_\($s)_\(.arch).deb"' \
+            <<<"${RESULTS:-[]}")
+          for _ in $(seq 1 20); do
+            missing=""
+            have=$(release_asset_names "$id")
+            for name in $expected; do
+              grep -qxF "$name" <<<"$have" || missing="$missing $name"
+            done
+            [ -z "$missing" ] && exit 0
+            echo "waiting for:$missing"
+            sleep 15
+          done
+          echo "::warning::not attached after five minutes:$missing"
+
+      - name: Open an issue for each failed build
+        id: issues
+        run: |
+          set -euo pipefail
+          package="${PACKAGE:-poc-${COMPONENT}}"
+          issues=$(python3 scripts/package_issues.py "$COMPONENT" "$package" "$VERSION" "$RUN_URL" "${RESULTS:-[]}")
+          echo "issues=$issues" >> "$GITHUB_OUTPUT"
+          echo "issues: $issues"
+
+      - name: Document the packages and publish the release
+        env:
+          ISSUES: ${{ steps.issues.outputs.issues }}
+        run: |
+          set -euo pipefail
+          . scripts/release.sh
+          tag="${COMPONENT}-v${VERSION}"
+          id=$(release_id "$tag")
+          marker="<!-- package-build:apt -->"
+          package="${PACKAGE:-poc-${COMPONENT}}"
+          issues="$ISSUES"
+          [ -n "$issues" ] || issues='{}'
+          release_body "$id" > body.md
+          python3 scripts/release_notes.py notes apt "$COMPONENT" "$VERSION" "$RUN_URL" \
+            --package "$package" --ppa "$PPA" --results "${RESULTS:-[]}" --issues "$issues" < body.md > notes.md
+          # The line of an earlier run, if any, gives way to this one.
+          grep -vF "$marker" notes.md > final.md || true
+          if [ "$STATUS" = success ]; then
+            line="${marker} ✅ Debian packages built and published on Launchpad for every series: ${RUN_URL}"
+          else
+            line="${marker} ⚠️ Debian packages: some series or architectures failed, see the table above and the issues opened for them: ${RUN_URL}"
+          fi
+          printf '\n%s\n' "$line" >> final.md
+          release_set_body "$id" final.md
+          if release_is_draft "$id"; then
+            release_publish "$id"
+            echo "published $tag"
+          fi
+
+      - name: Job summary
+        if: ${{ !cancelled() }}
+        env:
+          JOB_STATUS: ${{ job.status }}
+          ISSUES: ${{ steps.issues.outputs.issues }}
+        run: |
+          {
+            echo "## Packages complete: ${STATUS}"
+            echo
+            echo "Release [\`${COMPONENT}-v${VERSION}\`](https://github.com/${GITHUB_REPOSITORY}/releases/tag/${COMPONENT}-v${VERSION}), job ${JOB_STATUS}."
+            echo
+            echo "| Series | State | Published | Architectures |"
+            echo "| --- | --- | --- | --- |"
+            jq -r '.[] | "| \(.series) | \(.state) | \(.published) | \(.builds | map("\(.arch): \(.state)") | join(", ")) |"' <<<"${RESULTS:-[]}"
+            if [ -n "$ISSUES" ] && [ "$ISSUES" != "{}" ]; then
+              echo
+              echo "Issues opened: $(jq -r 'to_entries | map("#\(.value) (\(.key))") | join(", ")' <<<"$ISSUES")"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
