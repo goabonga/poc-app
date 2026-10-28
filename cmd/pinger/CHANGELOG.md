@@ -2,6 +2,12 @@
 
 All notable changes to this component are documented here.
 
+## [0.4.0] - 2026-10-28
+
+### Added
+
+- **pinger**: print its usage with --help (`8f733e1`)
+
 ## [0.3.0] - 2026-10-28
 
 ### Added
