@@ -259,7 +259,9 @@ jobs:
           echo "releases=${releases# }" >> "$GITHUB_OUTPUT"
 
   # Cross-compile each released binary for linux/amd64 and linux/arm64 and
-  # open a GitHub Release per tag, with notes from `multicz release-notes`.
+  # open a GitHub Release per tag, with notes from `multicz release-notes`. The
+  # release is a draft: package-complete.yml publishes it once the packages
+  # poc-apt builds for it are over, so it is only seen complete.
   publish:
     name: publish
     needs: [release]
@@ -300,7 +302,7 @@ jobs:
               assets+=("$out")
             done
             multicz release-notes --tag "$tag" \
-              | gh release create "$tag" --title "$tag" --notes-file - "${assets[@]}"
+              | gh release create "$tag" --title "$tag" --notes-file - --draft "${assets[@]}"
           done
 
   # Dispatches poc-apt and poc-aur's own `publish` workflow for each released
