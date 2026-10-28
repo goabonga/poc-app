@@ -18,6 +18,10 @@ func main() {
 		fmt.Println(Version)
 		return
 	}
+	if len(os.Args) > 1 && (os.Args[1] == "--help" || os.Args[1] == "-h") {
+		fmt.Println("usage: hello [name]")
+		return
+	}
 	name := ""
 	if len(os.Args) > 1 {
 		name = os.Args[1]
