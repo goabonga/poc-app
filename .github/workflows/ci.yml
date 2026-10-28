@@ -146,12 +146,11 @@ jobs:
           token: ${{ secrets.AUTO_MERGE_PAT || github.token }}
           persist-credentials: true
       - name: Check that main has not moved on
-        # The release commit is made on the commit that triggered the run. A
-        # push that landed since would make the push of the release commit
-        # fail (non-fast-forward) after the tags went through, leaving tags
-        # on a commit that is not on main (confirmed for real). The run of the
-        # newer commit follows this one and releases everything that is
-        # pending, so this one stands aside.
+        # The release commit is made on the commit that triggered the run, and
+        # the runs on main queue one after the other, but a push can land
+        # while this one waited or runs. The run of that newer commit follows
+        # this one and releases everything that is pending, so this one stands
+        # aside (the push below also refuses, atomically, if main moves later).
         id: head
         run: |
           latest=$(git ls-remote origin refs/heads/main | cut -f1)
@@ -225,8 +224,33 @@ jobs:
           if [ "${{ steps.gpg.outputs.available }}" = "true" ]; then
             SIGN="--sign"
           fi
-          PLAN=$(multicz bump --commit --tag --push $SIGN \
+          PLAN=$(multicz bump --commit --tag $SIGN \
             --summary "$GITHUB_STEP_SUMMARY" --output json)
+          if [ "$(jq '.bumps // {} | length' <<<"$PLAN")" -eq 0 ]; then
+            echo "nothing to release"
+            echo "releases=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # The release commit and its tags go up in one atomic push. multicz's
+          # own --push sends the tags and the branch one after the other: when
+          # main had moved on, the tags went through and the branch did not,
+          # which left a tag on a commit that is not on main (confirmed for
+          # real). Refused as a whole, nothing is left behind and this run
+          # stands aside: the run of the commit that landed releases what is
+          # pending.
+          mapfile -t tags < <(git tag --points-at HEAD)
+          refs=()
+          for tag in "${tags[@]}"; do refs+=("refs/tags/$tag"); done
+          if ! git push --atomic origin HEAD:refs/heads/main "${refs[@]}"; then
+            echo "::warning::main moved on while the release was made: nothing was pushed"
+            {
+              echo "## Release skipped"
+              echo
+              echo "\`main\` moved on while the release was made: nothing was pushed, and the run of the newer commit releases what is pending."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "releases=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           releases=""
           for component in $(echo "$PLAN" | jq -r '.bumps // {} | keys | join(" ")'); do
             [ -d "cmd/${component}" ] || continue
