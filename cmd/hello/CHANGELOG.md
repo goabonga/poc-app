@@ -2,6 +2,12 @@
 
 All notable changes to this component are documented here.
 
+## [0.3.0] - 2026-10-28
+
+### Added
+
+- **hello**: print the version with --version (`ac3a904`)
+
 ## [0.2.1] - 2026-10-27
 
 ### Dependencies

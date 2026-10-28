@@ -4,4 +4,4 @@
 package main
 
 // Version is patched in place by multicz on every release.
-const Version = "0.2.1"
+const Version = "0.3.0"
