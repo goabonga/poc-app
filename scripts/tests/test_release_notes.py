@@ -23,45 +23,66 @@ DETAILS = {
 }
 
 
-DEBS = [
-    {"series": "noble", "arch": "amd64", "url": "https://l/a.deb", "sha256": "aa"},
-    {"series": "noble", "arch": "arm64", "url": "https://l/b.deb", "sha256": "bb"},
+BUILD_OK = {"arch": "amd64", "state": "Successfully built"}
+BUILD_OK_ARM = {"arch": "arm64", "state": "Successfully built"}
+BUILD_KO = {"arch": "arm64", "state": "Failed to build"}
+RESULTS = [
+    {"series": "noble", "state": "success", "published": True, "builds": [BUILD_OK, BUILD_OK_ARM]},
+    {"series": "jammy", "state": "failure", "published": False, "builds": [BUILD_OK, BUILD_KO]},
+    {"series": "stonking", "state": "missing", "published": False, "builds": []},
 ]
+ISSUES = {"jammy/arm64": 12, "stonking/*": 13}
 
 
 def test_apt_section_explains_how_to_install_from_the_ppa() -> None:
-    text = rn.section("apt", "poc-hello", "0.3.0", "ignored", DETAILS, DEBS)
+    text = rn.section("apt", "poc-hello", "0.3.0", "ignored", DETAILS, RESULTS, ISSUES)
     assert "sudo add-apt-repository ppa:goabonga/poc" in text
     assert "sudo apt install poc-hello\n" in text
-    assert "deb https://ppa.launchpadcontent.net/goabonga/poc/ubuntu noble main" in text
+    assert "deb https://ppa.launchpadcontent.net/goabonga/poc/ubuntu <series> main" in text
+    assert "one of noble" in text
     assert "ABCDEF0123456789" in text
     assert "for Ubuntu" in text
-    assert "| noble | arm64 | `poc-hello_0.3.0_noble_arm64.deb` |" in text
+
+
+def test_apt_section_marks_what_failed_and_links_the_issues() -> None:
+    text = rn.section("apt", "poc-hello", "0.3.0", "ignored", DETAILS, RESULTS, ISSUES)
+    assert "| noble | amd64 ✅, arm64 ✅ |" in text
+    assert "| jammy | amd64 ⚠️ built, not published yet, arm64 ❌ failed (#12) |" in text
+    assert "| stonking | ❌ not built (missing) (#13) |" in text
+
+
+def test_apt_section_lists_the_packages_attached_to_the_release() -> None:
+    text = rn.section("apt", "poc-hello", "0.3.0", "ignored", DETAILS, RESULTS, ISSUES)
+    assert "- `poc-hello_0.3.0_noble_arm64.deb`" in text
+    assert "- `poc-hello_0.3.0_jammy_amd64.deb`" in text
+    assert "jammy_arm64" not in text
     assert "sudo apt install ./poc-hello_0.3.0_noble_amd64.deb" in text
 
 
+def test_apt_section_without_published_series_does_not_send_to_the_ppa() -> None:
+    results = [RESULTS[1], RESULTS[2]]
+    text = rn.section("apt", "poc-hello", "0.3.0", "ignored", DETAILS, results, ISSUES)
+    assert "add-apt-repository" not in text
+    assert "No series is published in the archive yet." in text
+    assert "| jammy |" in text
+
+
 def test_apt_section_leaves_out_what_launchpad_did_not_tell() -> None:
-    details = {**DETAILS, "series": "", "fingerprint": ""}
-    text = rn.section("apt", "poc-hello", "0.3.0", "ignored", details, DEBS)
+    details = {**DETAILS, "fingerprint": ""}
+    text = rn.section("apt", "poc-hello", "0.3.0", "ignored", details, RESULTS, ISSUES)
     assert "add-apt-repository" in text
-    assert "deb-src" not in text
     assert "signed with the key" not in text
 
 
 def test_apt_section_without_a_ppa_only_offers_the_debs() -> None:
-    text = rn.section("apt", "poc-hello", "0.3.0", "ignored", None, DEBS)
+    text = rn.section("apt", "poc-hello", "0.3.0", "ignored", None, RESULTS)
     assert "add-apt-repository" not in text
     assert "sudo apt install ./poc-hello_0.3.0_noble_amd64.deb" in text
 
 
-def test_apt_section_without_built_packages_does_not_mention_files() -> None:
-    text = rn.section("apt", "poc-hello", "0.3.0", "ignored", DETAILS, [])
-    assert "add-apt-repository" in text
-    assert "attached to this release" not in text
-
-
 def test_asset_names_say_what_the_file_is() -> None:
-    assert rn.asset_name("poc-hello", "0.4.0", DEBS[1]) == "poc-hello_0.4.0_noble_arm64.deb"
+    deb = {"series": "noble", "arch": "arm64"}
+    assert rn.asset_name("poc-hello", "0.4.0", deb) == "poc-hello_0.4.0_noble_arm64.deb"
 
 
 def test_parse_debs_keeps_the_well_formed_entries() -> None:
@@ -69,6 +90,15 @@ def test_parse_debs_keeps_the_well_formed_entries() -> None:
     assert rn.parse_debs(text) == [{"series": "a", "arch": "b", "url": "u"}]
     assert rn.parse_debs("") == []
     assert rn.parse_debs("not json") == []
+
+
+def test_parse_results_and_issues_tolerate_garbage() -> None:
+    assert rn.parse_results("not json") == []
+    assert rn.parse_results("") == []
+    assert rn.parse_results('[{"series":"a"},"x",{"nope":1}]') == [{"series": "a"}]
+    assert rn.parse_issues("not json") == {}
+    assert rn.parse_issues('{"a/b": 3, "c": "x"}') == {"a/b": 3}
+    assert rn.parse_issues("[1]") == {}
 
 
 def test_aur_section_explains_how_to_install_from_the_aur() -> None:
@@ -195,17 +225,24 @@ def test_main_notes_looks_the_ppa_up_for_apt(
 
     monkeypatch.setattr(rn, "ppa_details", fake)
     monkeypatch.setattr("sys.stdin", io.StringIO(""))
-    argv = ["notes", "apt", "hello", "0.3.0", "x", "--ppa", "ppa:goabonga/poc", "--debs", json.dumps(DEBS)]
+    argv = [
+        "notes", "apt", "hello", "0.3.0", "x", "--ppa", "ppa:goabonga/poc",
+        "--results", json.dumps(RESULTS), "--issues", json.dumps(ISSUES),
+    ]
     assert rn.main(argv) == 0
     assert seen == [("ppa:goabonga/poc", "poc-hello")]
     out = capsys.readouterr().out
-    assert "ABCDEF0123456789" in out and "poc-hello_0.3.0_noble_arm64.deb" in out
+    assert "ABCDEF0123456789" in out and "poc-hello_0.3.0_noble_arm64.deb" in out and "(#12)" in out
 
 
 def test_main_assets_lists_what_to_attach(capsys: pytest.CaptureFixture[str]) -> None:
     import json
 
-    assert rn.main(["assets", "poc-hello", "0.3.0", json.dumps(DEBS)]) == 0
+    debs = [
+        {"series": "noble", "arch": "amd64", "url": "https://l/a.deb", "sha256": "aa"},
+        {"series": "noble", "arch": "arm64", "url": "https://l/b.deb", "sha256": "bb"},
+    ]
+    assert rn.main(["assets", "poc-hello", "0.3.0", json.dumps(debs)]) == 0
     assert capsys.readouterr().out.splitlines() == [
         "poc-hello_0.3.0_noble_amd64.deb\thttps://l/a.deb\taa",
         "poc-hello_0.3.0_noble_arm64.deb\thttps://l/b.deb\tbb",
