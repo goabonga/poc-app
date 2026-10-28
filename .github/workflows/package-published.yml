@@ -17,6 +17,10 @@ name: package-published
 #   url:       the AUR package page, or the poc-aur release when it was not
 #              pushed to the AUR
 #   package:   the name of the package, e.g. "poc-hello"
+#   archive_url:    the archive of the AUR package (PKGBUILD and .SRCINFO), as
+#                   the AUR serves it or, when it was not pushed there, kept
+#                   in a poc-aur release
+#   archive_sha256: its SHA-256
 
 on:
   repository_dispatch:
@@ -37,14 +41,45 @@ jobs:
       KIND: ${{ github.event.client_payload.kind }}
       URL: ${{ github.event.client_payload.url }}
       PACKAGE: ${{ github.event.client_payload.package }}
+      ARCHIVE_URL: ${{ github.event.client_payload.archive_url }}
+      ARCHIVE_SHA256: ${{ github.event.client_payload.archive_sha256 }}
     steps:
       - uses: actions/checkout@v7
+
+      - name: Attach the archive of the AUR package
+        id: archive
+        # The recipe the AUR serves (PKGBUILD and .SRCINFO), to keep with the
+        # release. Nothing is built.
+        if: env.ARCHIVE_URL != ''
+        run: |
+          set -euo pipefail
+          [[ "$COMPONENT" =~ ^[a-z][a-z0-9-]*$ ]] || { echo "::error::invalid component"; exit 1; }
+          [[ "$VERSION" =~ ^[0-9][0-9A-Za-z.+~-]*$ ]] || { echo "::error::invalid version"; exit 1; }
+          # Only the AUR, or the poc-aur release that stands in for it, serves it.
+          case "$ARCHIVE_URL" in
+            https://aur.archlinux.org/*|https://github.com/goabonga/poc-aur/*) ;;
+            *) echo "::error::unexpected URL $ARCHIVE_URL"; exit 1 ;;
+          esac
+          . scripts/release.sh
+          tag="${COMPONENT}-v${VERSION}"
+          id=$(release_id "$tag")
+          [ -n "$id" ] || { echo "::error::no release for $tag"; exit 1; }
+          name="${PACKAGE:-poc-${COMPONENT}}_${VERSION}_aur.tar.gz"
+          curl -fsSL -o "$name" "$ARCHIVE_URL"
+          if [ -n "$ARCHIVE_SHA256" ]; then
+            echo "${ARCHIVE_SHA256}  ${name}" | sha256sum --check --status \
+              || { echo "::error::checksum mismatch for $name"; exit 1; }
+          fi
+          release_attach "$id" "$name" "$name"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
 
       - name: Document the package in the release notes
         # Adds, or replaces, the section explaining how to install the
         # package from the AUR. It sits between markers, so a rerun does not
         # pile up a second copy. The release can still be a draft, waiting
         # for the packages of poc-apt.
+        env:
+          ARCHIVE_NAME: ${{ steps.archive.outputs.name }}
         run: |
           set -euo pipefail
           . scripts/release.sh
@@ -53,13 +88,14 @@ jobs:
           [ -n "$id" ] || { echo "::error::no release for $tag"; exit 1; }
           release_body "$id" > body.md
           python3 scripts/release_notes.py notes "$KIND" "$COMPONENT" "$VERSION" "$URL" \
-            --package "$PACKAGE" < body.md > notes.md
+            --package "$PACKAGE" --archive "$ARCHIVE_NAME" < body.md > notes.md
           release_set_body "$id" notes.md
 
       - name: Job summary
         if: ${{ !cancelled() }}
         env:
           JOB_STATUS: ${{ job.status }}
+          ARCHIVE_NAME: ${{ steps.archive.outputs.name }}
         run: |
           {
             echo "## Package published: ${JOB_STATUS}"
@@ -70,5 +106,8 @@ jobs:
             echo "| Version | \`${VERSION}\` |"
             echo "| Kind | \`${KIND}\` |"
             echo "| Release | [\`${COMPONENT}-v${VERSION}\`](https://github.com/${GITHUB_REPOSITORY}/releases/tag/${COMPONENT}-v${VERSION}) |"
-            echo "| Package | built by poc-aur; install steps added to the release notes |"
+            echo "| Package | AUR recipe, install steps added to the release notes |"
+            if [ -n "${ARCHIVE_NAME:-}" ]; then
+              echo "| Attached | \`${ARCHIVE_NAME}\` |"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
