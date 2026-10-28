@@ -19,7 +19,7 @@ func main() {
 		return
 	}
 	if len(os.Args) > 1 && (os.Args[1] == "--help" || os.Args[1] == "-h") {
-		fmt.Println("usage: pinger host:port")
+		fmt.Println("usage: pinger host:port  reports the TCP connect latency to host:port")
 		return
 	}
 	if len(os.Args) < 2 {
