@@ -44,7 +44,10 @@ def fetch(url: str, params: dict[str, str] | None = None) -> Any:
     """The JSON a public Launchpad API URL returns."""
     if params:
         url = f"{url}?{urllib.parse.urlencode(params)}"
-    with urllib.request.urlopen(url, timeout=30) as response:  # noqa: S310
+    # Launchpad's API is behind a cache that keeps an answer, an empty one
+    # included, for a long time.
+    request = urllib.request.Request(url, headers={"Cache-Control": "no-cache", "Pragma": "no-cache"})
+    with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310
         return json.load(response)
 
 
