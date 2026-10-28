@@ -108,6 +108,14 @@ and opens a GitHub Release, and `trigger packaging` starts the poc-apt and
 poc-aur pipelines. Maintainers do not bump versions or edit the changelog by
 hand.
 
+The release is created as a draft, with the binaries. poc-apt reports each
+series as Launchpad builds it, and its packages are attached to the draft;
+once every series is over, the notes get the install instructions and the
+result of every series and architecture, and the release is published. A
+series or architecture that failed does not hold the release back: it is
+marked as failed in the notes and a bug issue is opened for it, with the
+build page and the end of the build log.
+
 ## Reporting bugs and asking for features
 
 Please open a GitHub issue. For security-sensitive reports, follow
