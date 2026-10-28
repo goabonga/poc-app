@@ -5,18 +5,22 @@
 
 """Document a released package in the notes of its GitHub Release.
 
-Run by package-published.yml once poc-apt or poc-aur reported a package:
+Two commands, run by package-build.yml and package-published.yml:
 
-    release_notes.py KIND COMPONENT VERSION URL [--package NAME] [--ppa PPA] \\
-        < notes.md > new-notes.md
+    release_notes.py notes KIND COMPONENT VERSION URL [--package NAME] \\
+        [--ppa PPA] [--debs JSON] < notes.md > new-notes.md
+    release_notes.py assets PACKAGE VERSION DEBS_JSON
 
-reads the current release notes on stdin and writes them back with one
-section for the package, how to install it and where it comes from. Nothing
-about the PPA is written down here: its signing key, its series and its
-pages come from the public Launchpad API, and the package and PPA names from
-the dispatch poc-apt and poc-aur send. The section sits between two markers,
-so a rerun replaces it instead of piling up a second copy, and the notes
-around it are left alone.
+``notes`` reads the current release notes on stdin and writes them back with
+one section for the package, how to install it and where it comes from.
+Nothing about the PPA is written down here: its signing key, its series and
+its pages come from the public Launchpad API, and the package and PPA names
+from the dispatch poc-apt and poc-aur send. The section sits between two
+markers, so a rerun replaces it instead of piling up a second copy, and the
+notes around it are left alone.
+
+``assets`` prints, for the ``.deb`` files Launchpad built, the name each is
+attached to the release under, its URL and its SHA-256, tab separated.
 """
 
 import argparse
@@ -80,14 +84,45 @@ def ppa_details(ppa: str, package: str) -> dict[str, str] | None:
     }
 
 
-def apt_section(package: str, version: str, details: dict[str, str] | None) -> str:
-    deb = f"""The `.deb` built for this version is also attached to this release:
+def asset_name(package: str, version: str, deb: dict[str, str]) -> str:
+    """The name a built .deb is attached to the release under.
+
+    Launchpad's own file names carry a revision and a ``~series`` that GitHub
+    rewrites; this one says what the file is.
+    """
+    return f"{package}_{version}_{deb['series']}_{deb['arch']}.deb"
+
+
+def parse_debs(text: str) -> list[dict[str, str]]:
+    """The .deb files poc-apt reports: ``[{series, arch, url, sha256}, ...]``."""
+    try:
+        debs = json.loads(text) if text.strip() else []
+    except ValueError:
+        return []
+    return [deb for deb in debs if isinstance(deb, dict) and {"series", "arch", "url"} <= deb.keys()]
+
+
+def apt_section(
+    package: str, version: str, details: dict[str, str] | None, debs: list[dict[str, str]]
+) -> str:
+    files = ""
+    if debs:
+        rows = "\n".join(
+            f"| {deb['series']} | {deb['arch']} | `{asset_name(package, version, deb)}` |"
+            for deb in debs
+        )
+        files = f"""The packages Launchpad built are also attached to this release, one per
+series and architecture, to install without adding the archive:
+
+| Series | Architecture | File |
+| --- | --- | --- |
+{rows}
 
 ```bash
-sudo apt install ./{package}_{version}_amd64.deb
+sudo apt install ./{asset_name(package, version, debs[0])}
 ```"""
     if details is None:
-        return f"## Install with apt\n\n{deb}"
+        return f"## Install with apt\n\n{files}" if files else "## Install with apt"
     series = details["series"]
     by_hand = ""
     if series:
@@ -102,7 +137,8 @@ deb-src {details["sources_url"]} {series} main
     key = ""
     if details["fingerprint"]:
         key = f"\n\nThe archive is signed with the key `{details['fingerprint']}`."
-    target = f" for {details['distribution'].capitalize()} `{series}`" if series else ""
+    target = f" for {details['distribution'].capitalize()}" if series else ""
+    built = f"\n\n{files}" if files else ""
     return f"""## Install with apt
 
 The package is built by Launchpad{target} and published in a personal
@@ -113,9 +149,7 @@ untrusted, so add it only if you trust its owner.
 sudo add-apt-repository {details["ppa"]}
 sudo apt update
 sudo apt install {package}
-```{by_hand}{key}
-
-{deb}
+```{by_hand}{key}{built}
 
 Builds and their logs: [{details["ppa"]}]({details["page_url"]})."""
 
@@ -149,10 +183,15 @@ Package page: [{package}]({url})."""
 
 
 def section(
-    kind: str, package: str, version: str, url: str, details: dict[str, str] | None = None
+    kind: str,
+    package: str,
+    version: str,
+    url: str,
+    details: dict[str, str] | None = None,
+    debs: list[dict[str, str]] | None = None,
 ) -> str:
     if kind == "apt":
-        return apt_section(package, version, details)
+        return apt_section(package, version, details, debs or [])
     if kind == "aur":
         return aur_section(package, url)
     raise ValueError(f"unknown package kind: {kind!r}")
@@ -171,18 +210,29 @@ def upsert(notes: str, kind: str, text: str) -> str:
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("kind", choices=["apt", "aur"])
-    parser.add_argument("component")
-    parser.add_argument("version")
-    parser.add_argument("url")
-    parser.add_argument("--package", default="", help="the name of the package")
-    parser.add_argument("--ppa", default="", help="the PPA, as ppa:<owner>/<name> (apt only)")
+    commands = parser.add_subparsers(dest="command", required=True)
+    notes = commands.add_parser("notes", help="write the package section into the release notes")
+    notes.add_argument("kind", choices=["apt", "aur"])
+    notes.add_argument("component")
+    notes.add_argument("version")
+    notes.add_argument("url")
+    notes.add_argument("--package", default="", help="the name of the package")
+    notes.add_argument("--ppa", default="", help="the PPA, as ppa:<owner>/<name> (apt only)")
+    notes.add_argument("--debs", default="", help="the built .deb files, as JSON (apt only)")
+    assets = commands.add_parser("assets", help="list the .deb files to attach")
+    assets.add_argument("package")
+    assets.add_argument("version")
+    assets.add_argument("debs")
     args = parser.parse_args(argv)
+    if args.command == "assets":
+        for deb in parse_debs(args.debs):
+            print(f"{asset_name(args.package, args.version, deb)}\t{deb['url']}\t{deb.get('sha256', '')}")
+        return 0
     # Older dispatches do not carry the package name: poc-<component> is
     # what poc-apt and poc-aur have always called it.
     package = args.package or f"poc-{args.component}"
     details = ppa_details(args.ppa, package) if args.kind == "apt" and args.ppa else None
-    text = section(args.kind, package, args.version, args.url, details)
+    text = section(args.kind, package, args.version, args.url, details, parse_debs(args.debs))
     sys.stdout.write(upsert(sys.stdin.read(), args.kind, text))
     return 0
 
