@@ -1,12 +1,12 @@
 {
   "version": 1,
-  "git_head": "bc4b48756edce3e0e3e15dc70024eda480cc3d83",
-  "git_head_short": "bc4b487",
-  "timestamp": "2026-10-28T14:09:26Z",
+  "git_head": "4ffc195b48baf1701818a41c3842eb657ec67203",
+  "git_head_short": "4ffc195",
+  "timestamp": "2026-10-28T14:26:58Z",
   "components": {
     "hello": {
-      "version": "0.5.0",
-      "tag": "hello-v0.5.0",
+      "version": "0.6.0",
+      "tag": "hello-v0.6.0",
       "tag_sha": null
     }
   }

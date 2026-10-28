@@ -2,6 +2,12 @@
 
 All notable changes to this component are documented here.
 
+## [0.6.0] - 2026-10-28
+
+### Added
+
+- **hello**: describe what it does in its usage (`4ffc195`)
+
 ## [0.5.0] - 2026-10-28
 
 ### Added
