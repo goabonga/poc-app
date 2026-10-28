@@ -113,7 +113,7 @@ jobs:
           printf '\n%s\n' "$line" >> final.md
           release_set_body "$id" final.md
           if release_is_draft "$id"; then
-            release_publish "$id"
+            release_publish "$id" "$tag"
             echo "published $tag"
           fi
 
