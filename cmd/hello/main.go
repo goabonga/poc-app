@@ -19,7 +19,7 @@ func main() {
 		return
 	}
 	if len(os.Args) > 1 && (os.Args[1] == "--help" || os.Args[1] == "-h") {
-		fmt.Println("usage: hello [name]")
+		fmt.Println("usage: hello [name]  prints a greeting for name, or for the world")
 		return
 	}
 	name := ""
