@@ -8,7 +8,8 @@
 Two commands, run by package-build.yml and package-published.yml:
 
     release_notes.py notes KIND COMPONENT VERSION URL [--package NAME] \\
-        [--ppa PPA] [--results JSON] [--issues JSON] < notes.md > new-notes.md
+        [--ppa PPA] [--results JSON] [--issues JSON] [--archive NAME] \\
+        < notes.md > new-notes.md
     release_notes.py assets PACKAGE VERSION DEBS_JSON
 
 ``notes`` reads the current release notes on stdin and writes them back with
@@ -222,13 +223,24 @@ sudo apt install {package}
     )
 
 
-def aur_section(package: str, url: str) -> str:
+def aur_archive_name(package: str, version: str) -> str:
+    """The name the archive of the AUR package is attached to the release under."""
+    return f"{package}_{version}_aur.tar.gz"
+
+
+def aur_section(package: str, url: str, archive: str = "") -> str:
+    attached = (
+        f"\n\nThe recipe as the AUR serves it, the `PKGBUILD` and its `.SRCINFO`, is attached\n"
+        f"to this release: `{archive}`."
+        if archive
+        else ""
+    )
     if not url.startswith(f"{AUR}/"):
         return f"""## Arch Linux package
 
-The package was built, but it was not pushed to the AUR (no deploy key is
-configured), so it cannot be installed with an AUR helper yet. The built
-package is available at {url}."""
+The package recipe was prepared, but it was not pushed to the AUR (no deploy
+key is configured), so it cannot be installed with an AUR helper yet. The
+recipe is available at {url}.{attached}"""
     return f"""## Install from the AUR
 
 For Arch Linux and its derivatives. The package is a recipe (a `PKGBUILD`) on
@@ -247,7 +259,7 @@ cd {package}
 makepkg -si
 ```
 
-Package page: [{package}]({url})."""
+Package page: [{package}]({url}).{attached}"""
 
 
 def section(
@@ -258,11 +270,12 @@ def section(
     details: dict[str, str] | None = None,
     results: list[dict[str, Any]] | None = None,
     issues: dict[str, int] | None = None,
+    archive: str = "",
 ) -> str:
     if kind == "apt":
         return apt_section(package, version, details, results or [], issues)
     if kind == "aur":
-        return aur_section(package, url)
+        return aur_section(package, url, archive)
     raise ValueError(f"unknown package kind: {kind!r}")
 
 
@@ -289,6 +302,7 @@ def main(argv: list[str]) -> int:
     notes.add_argument("--ppa", default="", help="the PPA, as ppa:<owner>/<name> (apt only)")
     notes.add_argument("--results", default="", help="what happened to each series, as JSON (apt only)")
     notes.add_argument("--issues", default="", help="the issues of failed builds, as JSON (apt only)")
+    notes.add_argument("--archive", default="", help="the name of the AUR archive attached to the release (aur only)")
     assets = commands.add_parser("assets", help="list the .deb files to attach")
     assets.add_argument("package")
     assets.add_argument("version")
@@ -310,6 +324,7 @@ def main(argv: list[str]) -> int:
         details,
         parse_results(args.results),
         parse_issues(args.issues),
+        args.archive,
     )
     sys.stdout.write(upsert(sys.stdin.read(), args.kind, text))
     return 0
