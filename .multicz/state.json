@@ -1,12 +1,12 @@
 {
   "version": 1,
-  "git_head": "fb59b9531580b9159a10dc7513ff2651471626c7",
-  "git_head_short": "fb59b95",
-  "timestamp": "2026-10-28T14:35:41Z",
+  "git_head": "e7519d839386851fcf88de6ff0afdde33a6462b9",
+  "git_head_short": "e7519d8",
+  "timestamp": "2026-10-28T15:47:05Z",
   "components": {
     "pinger": {
-      "version": "0.5.0",
-      "tag": "pinger-v0.5.0",
+      "version": "0.6.0",
+      "tag": "pinger-v0.6.0",
       "tag_sha": null
     }
   }
