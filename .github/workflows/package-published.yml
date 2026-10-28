@@ -62,3 +62,23 @@ jobs:
             printf '\nAlso available on the [AUR](%s).\n' "$URL" >> /tmp/body.md
             gh release edit "$tag" --notes-file /tmp/body.md
           fi
+
+      - name: Job summary
+        if: ${{ !cancelled() }}
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          {
+            echo "## Package published: ${JOB_STATUS}"
+            echo
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| Component | \`${COMPONENT}\` |"
+            echo "| Version | \`${VERSION}\` |"
+            echo "| Kind | \`${KIND}\` |"
+            echo "| Release | [\`${COMPONENT}-v${VERSION}\`](https://github.com/${GITHUB_REPOSITORY}/releases/tag/${COMPONENT}-v${VERSION}) |"
+            case "$KIND" in
+              apt) echo "| Package | \`.deb\` from poc-apt, attached to the release |" ;;
+              aur) echo "| Package | [AUR page](${URL}), linked in the release notes |" ;;
+            esac
+          } >> "$GITHUB_STEP_SUMMARY"
