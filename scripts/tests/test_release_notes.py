@@ -23,28 +23,52 @@ DETAILS = {
 }
 
 
+DEBS = [
+    {"series": "noble", "arch": "amd64", "url": "https://l/a.deb", "sha256": "aa"},
+    {"series": "noble", "arch": "arm64", "url": "https://l/b.deb", "sha256": "bb"},
+]
+
+
 def test_apt_section_explains_how_to_install_from_the_ppa() -> None:
-    text = rn.section("apt", "poc-hello", "0.3.0", "ignored", DETAILS)
+    text = rn.section("apt", "poc-hello", "0.3.0", "ignored", DETAILS, DEBS)
     assert "sudo add-apt-repository ppa:goabonga/poc" in text
     assert "sudo apt install poc-hello\n" in text
     assert "deb https://ppa.launchpadcontent.net/goabonga/poc/ubuntu noble main" in text
     assert "ABCDEF0123456789" in text
-    assert "Ubuntu `noble`" in text
-    assert "sudo apt install ./poc-hello_0.3.0_amd64.deb" in text
+    assert "for Ubuntu" in text
+    assert "| noble | arm64 | `poc-hello_0.3.0_noble_arm64.deb` |" in text
+    assert "sudo apt install ./poc-hello_0.3.0_noble_amd64.deb" in text
 
 
 def test_apt_section_leaves_out_what_launchpad_did_not_tell() -> None:
     details = {**DETAILS, "series": "", "fingerprint": ""}
-    text = rn.section("apt", "poc-hello", "0.3.0", "ignored", details)
+    text = rn.section("apt", "poc-hello", "0.3.0", "ignored", details, DEBS)
     assert "add-apt-repository" in text
     assert "deb-src" not in text
     assert "signed with the key" not in text
 
 
-def test_apt_section_without_a_ppa_only_offers_the_deb() -> None:
-    text = rn.section("apt", "poc-hello", "0.3.0", "ignored")
+def test_apt_section_without_a_ppa_only_offers_the_debs() -> None:
+    text = rn.section("apt", "poc-hello", "0.3.0", "ignored", None, DEBS)
     assert "add-apt-repository" not in text
-    assert "sudo apt install ./poc-hello_0.3.0_amd64.deb" in text
+    assert "sudo apt install ./poc-hello_0.3.0_noble_amd64.deb" in text
+
+
+def test_apt_section_without_built_packages_does_not_mention_files() -> None:
+    text = rn.section("apt", "poc-hello", "0.3.0", "ignored", DETAILS, [])
+    assert "add-apt-repository" in text
+    assert "attached to this release" not in text
+
+
+def test_asset_names_say_what_the_file_is() -> None:
+    assert rn.asset_name("poc-hello", "0.4.0", DEBS[1]) == "poc-hello_0.4.0_noble_arm64.deb"
+
+
+def test_parse_debs_keeps_the_well_formed_entries() -> None:
+    text = '[{"series":"a","arch":"b","url":"u"},{"series":"a"},"x"]'
+    assert rn.parse_debs(text) == [{"series": "a", "arch": "b", "url": "u"}]
+    assert rn.parse_debs("") == []
+    assert rn.parse_debs("not json") == []
 
 
 def test_aur_section_explains_how_to_install_from_the_aur() -> None:
@@ -134,13 +158,13 @@ def test_upsert_is_stable_when_rerun() -> None:
     assert rn.upsert(once, "apt", "TEXT") == once
 
 
-def test_main_reads_the_notes_and_writes_them_back(
+def test_main_notes_reads_the_notes_and_writes_them_back(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     import io
 
     monkeypatch.setattr("sys.stdin", io.StringIO("notes\n"))
-    argv = ["aur", "pinger", "0.3.0", AUR_URL, "--package", "poc-pinger"]
+    argv = ["notes", "aur", "pinger", "0.3.0", AUR_URL, "--package", "poc-pinger"]
     assert rn.main(argv) == 0
     out = capsys.readouterr().out
     assert out.startswith("notes\n\n<!-- package:aur -->")
@@ -153,14 +177,15 @@ def test_main_falls_back_to_the_historical_package_name(
     import io
 
     monkeypatch.setattr("sys.stdin", io.StringIO(""))
-    assert rn.main(["aur", "hello", "0.3.0", AUR_URL]) == 0
+    assert rn.main(["notes", "aur", "hello", "0.3.0", AUR_URL]) == 0
     assert "yay -S poc-hello" in capsys.readouterr().out
 
 
-def test_main_looks_the_ppa_up_for_apt(
+def test_main_notes_looks_the_ppa_up_for_apt(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     import io
+    import json
 
     seen: list[tuple[str, str]] = []
 
@@ -170,11 +195,23 @@ def test_main_looks_the_ppa_up_for_apt(
 
     monkeypatch.setattr(rn, "ppa_details", fake)
     monkeypatch.setattr("sys.stdin", io.StringIO(""))
-    assert rn.main(["apt", "hello", "0.3.0", "x", "--ppa", "ppa:goabonga/poc"]) == 0
+    argv = ["notes", "apt", "hello", "0.3.0", "x", "--ppa", "ppa:goabonga/poc", "--debs", json.dumps(DEBS)]
+    assert rn.main(argv) == 0
     assert seen == [("ppa:goabonga/poc", "poc-hello")]
-    assert "ABCDEF0123456789" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "ABCDEF0123456789" in out and "poc-hello_0.3.0_noble_arm64.deb" in out
 
 
-def test_main_needs_its_positional_arguments() -> None:
+def test_main_assets_lists_what_to_attach(capsys: pytest.CaptureFixture[str]) -> None:
+    import json
+
+    assert rn.main(["assets", "poc-hello", "0.3.0", json.dumps(DEBS)]) == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "poc-hello_0.3.0_noble_amd64.deb\thttps://l/a.deb\taa",
+        "poc-hello_0.3.0_noble_arm64.deb\thttps://l/b.deb\tbb",
+    ]
+
+
+def test_main_needs_a_command() -> None:
     with pytest.raises(SystemExit):
-        rn.main(["apt"])
+        rn.main([])
