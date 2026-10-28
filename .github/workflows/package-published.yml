@@ -31,6 +31,7 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
       COMPONENT: ${{ github.event.client_payload.component }}
       VERSION: ${{ github.event.client_payload.version }}
       KIND: ${{ github.event.client_payload.kind }}
@@ -42,14 +43,18 @@ jobs:
       - name: Document the package in the release notes
         # Adds, or replaces, the section explaining how to install the
         # package from the AUR. It sits between markers, so a rerun does not
-        # pile up a second copy.
+        # pile up a second copy. The release can still be a draft, waiting
+        # for the packages of poc-apt.
         run: |
           set -euo pipefail
+          . scripts/release.sh
           tag="${COMPONENT}-v${VERSION}"
-          gh release view "$tag" --json body -q .body > body.md
+          id=$(release_id "$tag")
+          [ -n "$id" ] || { echo "::error::no release for $tag"; exit 1; }
+          release_body "$id" > body.md
           python3 scripts/release_notes.py notes "$KIND" "$COMPONENT" "$VERSION" "$URL" \
             --package "$PACKAGE" < body.md > notes.md
-          gh release edit "$tag" --notes-file notes.md
+          release_set_body "$id" notes.md
 
       - name: Job summary
         if: ${{ !cancelled() }}
