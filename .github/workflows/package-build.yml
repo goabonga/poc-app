@@ -4,17 +4,23 @@
 name: package-build
 
 # Receives the callback poc-apt sends once Launchpad has finished building a
-# component's package, whatever the outcome. Records it on the GitHub Release
-# created for that component's tag and fails when the build did not
-# succeed, so a broken package shows up here and not only in poc-apt.
+# component's packages, whatever the outcome. The .deb files Launchpad built
+# are what this release ships: they are attached to the GitHub Release created
+# for the component's tag, the notes tell how to install them and how the
+# build ended, and the run fails when it did not succeed, so a broken package
+# shows up here and not only in poc-apt.
 #
 # client_payload:
 #   component: "hello" | "pinger"
 #   version:   the released version, e.g. "0.3.0"
 #   kind:      "apt"
+#   package:   the name of the package, e.g. "poc-hello"
+#   ppa:       the Launchpad PPA, e.g. "ppa:goabonga/poc"
 #   status:    "success" | "failure" | "timeout"
 #   url:       the Launchpad build page
 #   log_url:   the build log, empty when there is none
+#   debs:      the .deb files built, a JSON array of
+#              {series, arch, url, sha256}
 
 on:
   repository_dispatch:
@@ -32,38 +38,95 @@ jobs:
       COMPONENT: ${{ github.event.client_payload.component }}
       VERSION: ${{ github.event.client_payload.version }}
       KIND: ${{ github.event.client_payload.kind }}
+      PACKAGE: ${{ github.event.client_payload.package }}
+      PPA: ${{ github.event.client_payload.ppa }}
       STATUS: ${{ github.event.client_payload.status }}
       URL: ${{ github.event.client_payload.url }}
       LOG_URL: ${{ github.event.client_payload.log_url }}
+      DEBS: ${{ github.event.client_payload.debs }}
     steps:
-      - name: Record the build on the release
+      - uses: actions/checkout@v7
+
+      - name: Check the payload
         run: |
           set -euo pipefail
           [[ "$COMPONENT" =~ ^[a-z][a-z0-9-]*$ ]] || { echo "::error::invalid component"; exit 1; }
           [[ "$VERSION" =~ ^[0-9][0-9A-Za-z.+~-]*$ ]] || { echo "::error::invalid version"; exit 1; }
+          [ "$KIND" = apt ] || { echo "::error::unexpected kind '$KIND'"; exit 1; }
+
+      - name: Attach the packages Launchpad built
+        run: |
+          set -euo pipefail
+          tag="${COMPONENT}-v${VERSION}"
+          package="${PACKAGE:-poc-${COMPONENT}}"
+          mkdir -p debs
+          files=()
+          while IFS=$'\t' read -r name url sha256; do
+            [ -n "$name" ] || continue
+            # Only Launchpad serves them: nothing else is downloaded.
+            [[ "$url" == https://launchpad.net/* ]] || { echo "::error::unexpected URL $url"; exit 1; }
+            curl -fsSL -o "debs/$name" "$url"
+            if [ -n "$sha256" ]; then
+              echo "${sha256}  debs/${name}" | sha256sum --check --status \
+                || { echo "::error::checksum mismatch for $name"; exit 1; }
+            fi
+            files+=("debs/$name")
+          done < <(python3 scripts/release_notes.py assets "$package" "$VERSION" "${DEBS:-[]}")
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::warning::Launchpad built no package to attach"
+            exit 0
+          fi
+          # Replaced when this run repeats, never piled up.
+          gh release upload "$tag" "${files[@]}" --clobber
+
+      - name: Document the packages in the release notes
+        # The install section, and one line with the outcome of the build.
+        # Both sit behind markers, so a rerun replaces them instead of piling
+        # up a second copy.
+        run: |
+          set -euo pipefail
           tag="${COMPONENT}-v${VERSION}"
           marker="<!-- package-build:${KIND} -->"
           case "$STATUS" in
             success) icon="✅"; text="built on Launchpad" ;;
             *)       icon="❌"; text="Launchpad build ${STATUS}" ;;
           esac
-          line="${marker} ${icon} Debian package ${text}: ${URL}"
+          line="${marker} ${icon} Debian packages ${text}: ${URL}"
           if [ -n "$LOG_URL" ] && [ "$STATUS" != "success" ]; then
             line="${line} ([log](${LOG_URL}))"
           fi
           gh release view "$tag" --json body -q .body > body.md
-          # One line per kind, replaced on a rerun instead of piling up.
-          grep -vF "$marker" body.md > notes.md || true
-          printf '\n%s\n' "$line" >> notes.md
-          gh release edit "$tag" --notes-file notes.md
+          python3 scripts/release_notes.py notes "$KIND" "$COMPONENT" "$VERSION" "$URL" \
+            --package "$PACKAGE" --ppa "$PPA" --debs "${DEBS:-[]}" < body.md > notes.md
+          grep -vF "$marker" notes.md > final.md || true
+          printf '\n%s\n' "$line" >> final.md
+          gh release edit "$tag" --notes-file final.md
+
+      - name: Job summary
+        if: ${{ !cancelled() }}
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
           {
             echo "## Package build: ${STATUS}"
             echo
-            echo "\`${tag}\` (${KIND}): ${URL}"
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| Release | [\`${COMPONENT}-v${VERSION}\`](https://github.com/${GITHUB_REPOSITORY}/releases/tag/${COMPONENT}-v${VERSION}) |"
+            echo "| Launchpad | ${URL} |"
+            echo "| Job | ${JOB_STATUS} |"
+            echo
+            if [ "$(jq 'length' <<<"${DEBS:-[]}")" -gt 0 ]; then
+              echo "| Series | Architecture |"
+              echo "| --- | --- |"
+              jq -r '.[] | "| \(.series) | \(.arch) |"' <<<"$DEBS"
+            else
+              echo "No package was attached."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Fail when the package did not build
+      - name: Fail when the packages did not build
         if: env.STATUS != 'success'
         run: |
-          echo "::error::The ${KIND} package of ${COMPONENT} ${VERSION} did not build (${STATUS}): ${URL}"
+          echo "::error::The ${KIND} packages of ${COMPONENT} ${VERSION} did not build (${STATUS}): ${URL}"
           exit 1
