@@ -3,19 +3,20 @@
 
 name: package-published
 
-# Receives the callback poc-apt/poc-aur send once a component's package has
-# actually built (and, when their own publish secrets are configured,
-# uploaded to the PPA/AUR). Attaches the result to the GitHub Release
-# the ci workflow already created for that component's tag, and documents
-# in its notes how to install the package (scripts/release_notes.py).
+# Receives the callback poc-aur sends once a component's package has actually
+# been built (and, when its own publish secrets are configured, pushed to the
+# AUR), and documents in the notes of the GitHub Release the ci workflow
+# already created for that component's tag how to install it
+# (scripts/release_notes.py). The Debian packages come from poc-apt through
+# package-build.yml instead, built by Launchpad.
 #
 # client_payload:
 #   component: "hello" | "pinger"
 #   version:   the released version, e.g. "0.1.0"
-#   kind:      "apt" | "aur"
-#   url:       the .deb download URL (apt) or the AUR/package page (aur)
+#   kind:      "aur"
+#   url:       the AUR package page, or the poc-aur release when it was not
+#              pushed to the AUR
 #   package:   the name of the package, e.g. "poc-hello"
-#   ppa:       the Launchpad PPA, e.g. "ppa:goabonga/poc" (apt only)
 
 on:
   repository_dispatch:
@@ -25,7 +26,8 @@ permissions:
   contents: write
 
 jobs:
-  attach:
+  document:
+    if: github.event.client_payload.kind == 'aur'
     runs-on: ubuntu-24.04
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -34,39 +36,19 @@ jobs:
       KIND: ${{ github.event.client_payload.kind }}
       URL: ${{ github.event.client_payload.url }}
       PACKAGE: ${{ github.event.client_payload.package }}
-      PPA: ${{ github.event.client_payload.ppa }}
     steps:
       - uses: actions/checkout@v7
 
-      - name: Attach the .deb to the release
-        if: env.KIND == 'apt'
-        env:
-          CROSS_REPO_TOKEN: ${{ secrets.CROSS_REPO_TOKEN }}
-        run: |
-          set -euo pipefail
-          tag="${COMPONENT}-v${VERSION}"
-          asset="poc-${COMPONENT}_${VERSION}_amd64.deb"
-          # poc-apt is a private repo too, so this download needs the same
-          # cross-repo auth as everything else that reaches across these
-          # three repos. The plain browser_download_url doesn't accept a
-          # Bearer token at all (404 regardless of -L, confirmed for
-          # real) - poc-apt's publish.yml sends the REST API asset
-          # endpoint (apiUrl) instead, which needs this Accept header to
-          # return the binary rather than its JSON metadata.
-          curl -fsSL -H "Authorization: Bearer $CROSS_REPO_TOKEN" \
-            -H "Accept: application/octet-stream" -o "$asset" "$URL"
-          gh release upload "$tag" "$asset" --clobber
-
       - name: Document the package in the release notes
         # Adds, or replaces, the section explaining how to install the
-        # package: the PPA for apt, the AUR for aur. It sits between markers,
-        # so a rerun does not pile up a second copy.
+        # package from the AUR. It sits between markers, so a rerun does not
+        # pile up a second copy.
         run: |
           set -euo pipefail
           tag="${COMPONENT}-v${VERSION}"
           gh release view "$tag" --json body -q .body > body.md
-          python3 scripts/release_notes.py "$KIND" "$COMPONENT" "$VERSION" "$URL" \
-            --package "$PACKAGE" --ppa "$PPA" < body.md > notes.md
+          python3 scripts/release_notes.py notes "$KIND" "$COMPONENT" "$VERSION" "$URL" \
+            --package "$PACKAGE" < body.md > notes.md
           gh release edit "$tag" --notes-file notes.md
 
       - name: Job summary
@@ -83,8 +65,5 @@ jobs:
             echo "| Version | \`${VERSION}\` |"
             echo "| Kind | \`${KIND}\` |"
             echo "| Release | [\`${COMPONENT}-v${VERSION}\`](https://github.com/${GITHUB_REPOSITORY}/releases/tag/${COMPONENT}-v${VERSION}) |"
-            case "$KIND" in
-              apt) echo "| Package | \`.deb\` from poc-apt, attached to the release; install steps added to the release notes |" ;;
-              aur) echo "| Package | built by poc-aur; install steps added to the release notes |" ;;
-            esac
+            echo "| Package | built by poc-aur; install steps added to the release notes |"
           } >> "$GITHUB_STEP_SUMMARY"
