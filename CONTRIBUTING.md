@@ -93,6 +93,12 @@ These workflows read the `AUTO_MERGE_PAT` and `GPG_PRIVATE_KEY` /
 `GPG_PASSPHRASE` secrets and the `GIT_USER_NAME`, `GIT_USER_EMAIL` and
 `GIT_SIGNING_KEY` variables of the repository.
 
+The packaging pipelines of poc-apt are told, with each release, the Ubuntu
+series to upload for and the architectures to build for: set the
+`PACKAGING_SERIES` and `PACKAGING_ARCHS` variables (space separated, for
+example `jammy noble resolute stonking` and `amd64 arm64`) to change them.
+When they are unset, poc-apt uses its own defaults.
+
 ## Releasing
 
 Releases are automated: on every push to `main`, once the quality jobs
