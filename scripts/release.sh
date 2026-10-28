@@ -18,9 +18,12 @@
 REPO="${GH_REPO:-${GITHUB_REPOSITORY:?GITHUB_REPOSITORY or GH_REPO is required}}"
 
 # The id of the (newest) release of a tag, draft or not; nothing when there is none.
+# A draft reports a placeholder as its tag_name ("untagged-<hash>"), even when
+# the tag exists (confirmed for real), so it is found by its title, which the
+# release is created with.
 release_id() {
   gh api "repos/$REPO/releases" --paginate \
-    --jq ".[] | select(.tag_name == \"$1\") | .id" | head -1
+    --jq ".[] | select(.tag_name == \"$1\" or .name == \"$1\") | .id" | head -1
 }
 
 release_body() { gh api "repos/$REPO/releases/$1" --jq '.body // ""'; }
@@ -30,7 +33,9 @@ release_set_body() { gh api -X PATCH "repos/$REPO/releases/$1" -F "body=@$2" > /
 
 release_is_draft() { [ "$(gh api "repos/$REPO/releases/$1" --jq .draft)" = true ]; }
 
-release_publish() { gh api -X PATCH "repos/$REPO/releases/$1" -F draft=false > /dev/null; }
+# release_publish ID TAG: the tag is set as well, or the draft keeps its placeholder
+# and GitHub would create a tag of that name.
+release_publish() { gh api -X PATCH "repos/$REPO/releases/$1" -F draft=false -f "tag_name=$2" > /dev/null; }
 
 release_asset_names() { gh api "repos/$REPO/releases/$1" --jq '.assets[].name'; }
 
