@@ -259,6 +259,10 @@ jobs:
   # stored here as CROSS_REPO_TOKEN. Skips gracefully when that secret is
   # unset, the same way the GPG/AUR-key gates do downstream. They report
   # back through package-published.yml once their package is built.
+  #
+  # poc-apt is also told the Ubuntu series to upload for and the
+  # architectures to build, from the PACKAGING_SERIES and PACKAGING_ARCHS
+  # repository variables; when they are unset it uses its own defaults.
   trigger-packaging:
     name: trigger packaging
     needs: [release, publish]
@@ -270,17 +274,26 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.CROSS_REPO_TOKEN }}
           RELEASES: ${{ needs.release.outputs.releases }}
+          SERIES: ${{ vars.PACKAGING_SERIES }}
+          ARCHS: ${{ vars.PACKAGING_ARCHS }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
           if [ -z "$GH_TOKEN" ]; then
             echo "::warning::secrets.CROSS_REPO_TOKEN unset; poc-apt/poc-aur were not triggered"
             exit 0
           fi
+          failed=0
+          # One failed dispatch must not hide the others.
+          dispatch() {
+            gh workflow run publish.yml "$@" || { echo "::error::could not dispatch $*"; failed=1; }
+          }
           for release in $RELEASES; do
             component="${release%%:*}"
             version="${release#*:}"
-            gh workflow run publish.yml --repo goabonga/poc-apt \
-              -f component="$component" -f version="$version"
-            gh workflow run publish.yml --repo goabonga/poc-aur \
+            dispatch --repo goabonga/poc-apt \
+              -f component="$component" -f version="$version" \
+              -f series="$SERIES" -f arch="$ARCHS"
+            dispatch --repo goabonga/poc-aur \
               -f component="$component" -f version="$version"
           done
+          exit "$failed"
